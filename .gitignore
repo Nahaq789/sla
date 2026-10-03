@@ -1,0 +1,20 @@
+# Terraform state（ローカル管理のため追跡しない）
+*.tfstate
+*.tfstate.*
+terraform.tfstate.backup
+
+# Terraform プラグインキャッシュ（init で再生成できる）
+.terraform/
+
+# tfvars は秘密情報を含む可能性があるため除外
+# *.tfvars.example は除外対象外（公開して良いテンプレート）
+*.tfvars
+!*.tfvars.example
+
+# Lambda ビルド成果物（terraform plan 時に自動生成される）
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+.env

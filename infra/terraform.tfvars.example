@@ -1,0 +1,16 @@
+# このファイルをコピーして terraform.tfvars を作成してください
+# terraform.tfvars は .gitignore により追跡対象外です
+
+# Bedrock グローバル推論プロファイル ID
+# Claude Sonnet 4.5 (US cross-region) の例
+bedrock_model_id = "us.anthropic.claude-sonnet-4-5"
+
+# Langfuse Cloud のホスト URL
+# サインアップ時に選択したリージョンに合わせる
+langfuse_host = "https://us.cloud.langfuse.com"
+
+# 予算アラートの通知先メールアドレス
+alert_email = "your-email@example.com"
+
+# 月次予算上限（USD）。デフォルト: 10（約 1,500 円相当）
+monthly_budget_usd = 10
