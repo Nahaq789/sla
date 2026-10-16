@@ -32,7 +32,7 @@ resource "aws_budgets_budget_action" "deny_bedrock_on_exceed" {
   definition {
     iam_action_definition {
       policy_arn = aws_iam_policy.deny_bedrock.arn
-      roles      = [aws_iam_role.lambda_exec.arn]
+      roles      = [aws_iam_role.lambda_exec.name]
     }
   }
 

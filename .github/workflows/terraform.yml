@@ -1,0 +1,113 @@
+# infra/ の Terraform を GitHub Actions で plan / apply する。
+#   - pull_request    : plan 用ロール (gha-sla-plan) で fmt / validate / plan
+#   - main への push  : apply 用ロール (gha-sla-apply) で apply
+#
+# ロールは aws-bootstrap リポジトリで作成している。
+# 信頼ポリシーの sub 条件が "pull_request" / "ref:refs/heads/main" のため、
+# ジョブに environment を指定するとロールを引き受けられなくなる点に注意。
+
+name: terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "agents/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "agents/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # ローカルと同じバージョンに揃える (state は新しいバージョンで書くと古いバージョンで読めなくなる)
+  TERRAFORM_VERSION: "1.16.6"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  # terraform.tfvars は追跡していないため、変数は GitHub の Variables / Secrets から渡す
+  TF_VAR_bedrock_model_id: ${{ vars.BEDROCK_MODEL_ID }}
+  TF_VAR_langfuse_host: ${{ vars.LANGFUSE_HOST }}
+  TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+defaults:
+  run:
+    working-directory: infra
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -diff -recursive
+
+      - name: terraform init
+        run: terraform init
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan
+        run: |
+          terraform plan -lock-timeout=5m -out=tfplan
+          {
+            echo "## terraform plan"
+            echo
+            echo "<details><summary>plan の詳細</summary>"
+            echo
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    # apply が並行して走らないようにする (実行中のものはキャンセルしない)
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init
+
+      - name: terraform apply
+        run: terraform apply -auto-approve -lock-timeout=5m

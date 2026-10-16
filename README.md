@@ -16,7 +16,7 @@ Slack → n8n (自宅PC) → Lambda (整理役) → n8n → GitHub Issue
 ### 前提条件
 
 - AWS CLI が設定済みであること（`aws sts get-caller-identity` で確認）
-- Terraform >= 1.9 がインストール済みであること
+- Terraform >= 1.11 がインストール済みであること
 
 ### 手順
 
@@ -43,6 +43,30 @@ terraform plan
 # 5. apply
 terraform apply
 ```
+
+---
+
+## CI（GitHub Actions）
+
+`.github/workflows/terraform.yml` で `infra/` を plan / apply します。
+
+- Pull Request: `terraform fmt` / `validate` / `plan`（結果はジョブのサマリーに出力）
+- main への push: `terraform apply`
+
+state は aws-bootstrap で作成した S3 バケット（`sla/terraform.tfstate`）に置き、AWS へは OIDC で aws-bootstrap が作成したロールを引き受けて接続します。
+
+Settings → Secrets and variables → Actions に以下を登録してください。
+
+| 種類 | 名前 | 値 |
+| --- | --- | --- |
+| Variable | `AWS_REGION` | `ap-northeast-1` |
+| Variable | `AWS_PLAN_ROLE_ARN` | aws-bootstrap の `terraform output` で確認した plan 用ロールの ARN |
+| Variable | `AWS_APPLY_ROLE_ARN` | aws-bootstrap の `terraform output` で確認した apply 用ロールの ARN |
+| Variable | `BEDROCK_MODEL_ID` | `terraform.tfvars` の `bedrock_model_id` と同じ値 |
+| Variable | `LANGFUSE_HOST` | `terraform.tfvars` の `langfuse_host` と同じ値 |
+| Secret | `ALERT_EMAIL` | `terraform.tfvars` の `alert_email` と同じ値 |
+
+> **注意**: CI の Terraform バージョンはワークフローの `TERRAFORM_VERSION` で固定しています。ローカルの Terraform を上げた場合はここも合わせてください（新しいバージョンで書いた state は古いバージョンで読めなくなります）。
 
 ---
 
