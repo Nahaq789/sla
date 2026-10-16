@@ -1,4 +1,4 @@
-# Terraform state（ローカル管理のため追跡しない）
+# Terraform state（S3 backend で管理。ローカルに生成された場合も追跡しない）
 *.tfstate
 *.tfstate.*
 terraform.tfstate.backup
