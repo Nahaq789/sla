@@ -1,10 +1,10 @@
 variable "bedrock_model_id" {
-  description = "Bedrock グローバル推論プロファイル ID（例: us.anthropic.claude-3-5-sonnet-20241022-v2:0）"
+  description = "Bedrock 推論プロファイル ID（例: jp.anthropic.claude-sonnet-4-6）"
   type        = string
 }
 
 variable "langfuse_host" {
-  description = "Langfuse Cloud のホスト URL（サインアップ時に選択したリージョンに合わせる。例: https://us.cloud.langfuse.com）"
+  description = "Langfuse Cloud のホスト URL（サインアップ時に選択したリージョンに合わせる。例: https://jp.cloud.langfuse.com）"
   type        = string
 }
 

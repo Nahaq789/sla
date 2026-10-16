@@ -44,7 +44,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 }
 
 # Bedrock モデル呼び出し権限
-# グローバル推論プロファイルはリージョンをまたぐため Resource をワイルドカードリージョンにする
+# 推論プロファイル（jp. / global.）はリージョンをまたぐため Resource をワイルドカードリージョンにする
 resource "aws_iam_policy" "lambda_bedrock" {
   name = "slack-issue-agent-organizer-bedrock"
 
