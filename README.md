@@ -17,6 +17,11 @@ Slack → n8n (自宅PC) → Lambda (整理役) → n8n → GitHub Issue
 
 - AWS CLI が設定済みであること（`aws sts get-caller-identity` で確認）
 - Terraform >= 1.11 がインストール済みであること
+- [uv](https://docs.astral.sh/uv/) と [just](https://github.com/casey/just) がインストール済みであること
+
+> **注意**: Lambda の zip は `scripts/build_organizer.sh` が作る `build/organizer/` から生成します。
+> `terraform` を直接実行する場合は、先に `just build` を実行してください（`just plan` / `just apply` は自動でビルドします）。
+> 整理役の単体テストは `just test` で実行できます。
 
 ### 手順
 
@@ -66,7 +71,7 @@ Settings → Secrets and variables → Actions に以下を登録してくださ
 | Variable | `LANGFUSE_HOST` | `terraform.tfvars` の `langfuse_host` と同じ値 |
 | Secret | `ALERT_EMAIL` | `terraform.tfvars` の `alert_email` と同じ値 |
 
-> **注意**: CI の Terraform バージョンはワークフローの `TERRAFORM_VERSION` で固定しています。ローカルの Terraform を上げた場合はここも合わせてください（新しいバージョンで書いた state は古いバージョンで読めなくなります）。
+> **注意**: CI の Terraform バージョンはワークフローの `TERRAFORM_VERSION` で、ローカルのバージョンはリポジトリルートの `.terraform-version`（tfenv が参照）で固定しています。上げる場合は両方を合わせてください（新しいバージョンで書いた state は古いバージョンで読めなくなります）。
 
 ---
 

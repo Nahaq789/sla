@@ -26,16 +26,26 @@ validate:
     terraform -chdir={{infra_dir}} validate
 
 # 差分確認（AWS への変更はしない）
-plan:
+plan: build
     terraform -chdir={{infra_dir}} plan
 
 # インフラ作成・更新（確認あり）
-apply:
+apply: build
     terraform -chdir={{infra_dir}} apply
 
 # インフラ削除（確認あり）
-destroy:
+destroy: build
     terraform -chdir={{infra_dir}} destroy
+
+# ===== 整理役 Lambda =====
+
+# デプロイ用の build/organizer/ を作る（plan / apply の前に自動で実行される）
+build:
+    ./scripts/build_organizer.sh
+
+# 整理役の単体テスト
+test:
+    uv run --project agents/organizer pytest agents/organizer
 
 # ===== SSM =====
 
