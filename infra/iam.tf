@@ -95,6 +95,30 @@ resource "aws_iam_role_policy_attachment" "lambda_ssm" {
   policy_arn = aws_iam_policy.lambda_ssm.arn
 }
 
+# 会話履歴テーブルの読み書き権限
+resource "aws_iam_policy" "lambda_dynamodb" {
+  name = "slack-issue-agent-organizer-dynamodb"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+        ]
+        Resource = aws_dynamodb_table.conversations.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = aws_iam_policy.lambda_dynamodb.arn
+}
+
 # ===== n8n 用 IAM ユーザー =====
 # アクセスキーは state に平文で残るため Terraform では作成しない
 # 発行手順は README を参照

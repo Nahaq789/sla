@@ -1,7 +1,8 @@
-# agents/organizer/ ディレクトリを zip 化してデプロイ用アーカイブを生成
+# scripts/build_organizer.sh が作る build/organizer/ (コードと依存パッケージ) を zip 化する
+# plan / apply の前にビルドしておくこと (just plan / just apply、CI では自動で実行する)
 data "archive_file" "organizer" {
   type        = "zip"
-  source_dir  = "${path.module}/../agents/organizer"
+  source_dir  = "${path.module}/../build/organizer"
   output_path = "${path.module}/../build/organizer.zip"
 }
 
@@ -29,6 +30,7 @@ resource "aws_lambda_function" "organizer" {
       # 値ではなく SSM パラメータ名を渡し、Lambda 実行時に取得させる
       LANGFUSE_PUBLIC_KEY_PARAM = aws_ssm_parameter.langfuse_public_key.name
       LANGFUSE_SECRET_KEY_PARAM = aws_ssm_parameter.langfuse_secret_key.name
+      CONVERSATIONS_TABLE_NAME  = aws_dynamodb_table.conversations.name
     }
   }
 

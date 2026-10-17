@@ -11,10 +11,11 @@ terraform.tfstate.backup
 *.tfvars
 !*.tfvars.example
 
-# Lambda ビルド成果物（terraform plan 時に自動生成される）
+# Lambda ビルド成果物（scripts/build_organizer.sh と terraform plan で生成される）
 build/
 
 # Python
 __pycache__/
 *.py[cod]
 .env
+.venv/
