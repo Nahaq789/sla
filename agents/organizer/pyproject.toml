@@ -1,0 +1,21 @@
+[project]
+name = "organizer"
+version = "0.1.0"
+description = "整理役 Lambda: Slack の依頼から GitHub Issue 案を作る"
+# Lambda のランタイム (python3.13) に合わせる
+requires-python = "==3.13.*"
+dependencies = [
+    "langfuse>=5.0.2",
+]
+
+[dependency-groups]
+# boto3 は Lambda ランタイムに同梱されているため、zip には入れず開発時のみ使う
+dev = [
+    "boto3>=1.43.114",
+    "moto[dynamodb]>=5.2.4",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
