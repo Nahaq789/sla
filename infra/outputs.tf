@@ -22,3 +22,8 @@ output "langfuse_secret_key_param" {
   description = "Langfuse 秘密鍵の SSM パラメータ名"
   value       = aws_ssm_parameter.langfuse_secret_key.name
 }
+
+output "conversations_table_name" {
+  description = "整理役の会話履歴テーブル名"
+  value       = aws_dynamodb_table.conversations.name
+}

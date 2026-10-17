@@ -42,7 +42,7 @@ n8n → Langfuse にスコア送信
 ## 3. フェーズ
 
 ### フェーズ1: Issue 作成まで(現在の対象)
-- 整理役 Lambda
+- 整理役 Lambda(会話履歴は DynamoDB に保存)
 - n8n ワークフロー(Slack 受信 → 整理役 → 確認ボタン → Issue 作成 → 通知)
 - Langfuse で整理役のトレースが見える
 - コスト制御(Budgets)
@@ -87,6 +87,8 @@ n8n → Langfuse にスコア送信
 | n8n はセルフホスト | 無料。Slack 連携と承認ステップを GUI で組める |
 | Langfuse は Cloud(Hobby) | セルフホストは Postgres・ClickHouse・Redis・S3 が必要で重い。AWS からトレースを送る経路も単純になる |
 | Langfuse は日本リージョン(`https://jp.cloud.langfuse.com`) | トレースにはプロンプトと Issue 案の本文が残るため、推論と同様にデータも国内(東京)に置く。料金はリージョンによらず同じ。リージョンは後から変更できない(アカウントの作り直しが必要) |
+| 聞き返し・修正の会話は整理役が DynamoDB に保存する | n8n は `thread_ts` と最新の発言を渡すだけで済む。Slack の表示内容から組み立て直すのではなく、整理役が返した JSON をそのまま次の呼び出しに使えるため、[修正] の精度が上がる。費用は月 1 円未満。Lambda 自体は状態を持たず、毎回 DynamoDB から読み書きする |
+| 整理役の Lambda は 1 本 | 会話の読み込み → Bedrock 呼び出し → 保存を 1 回の呼び出しで行う。部品の分離はファイル単位で行う(`core.py` / `history.py` / `lambda_app.py`) |
 | 1 Slack チャンネル = 1 リポジトリ | リポジトリを文章から推測しなくてよく、誤爆がない |
 | リージョンは ap-northeast-1(東京) | |
 | IaC は Terraform | `terraform destroy` で一括削除できるようにするため |
@@ -111,16 +113,21 @@ n8n → Langfuse にスコア送信
 {
   "message": "ログイン画面のエラーメッセージを日本語にして",
   "thread_ts": "1727770000.123456",
-  "repo": "Nahaq789/pob"
+  "repo": "Nahaq789/pob",
+  "message_ts": "1727770000.123456"
 }
 ```
-スレッドで聞き返した後の再呼び出し時は、それまでの会話を渡せるようにすること(形式は実装時に決める)。
+- 初回も聞き返しへの回答も [修正] の指示も、同じ形で呼ぶ。`message` には**最新の発言だけ**を入れる
+- それまでの会話は、整理役が `thread_ts` をキーに DynamoDB から読み出す(n8n は会話を組み立てない)
+- `message_ts` はユーザー発言の Slack の `ts`(省略可)。同じ値で再度呼ばれた場合は、Bedrock を呼ばずに前回の結果を返す(Slack の再送対策)
+- `message` は 4,000 文字まで。`repo` は `owner/repo` 形式
 
 ### 整理役 Lambda の出力
 ```json
 {
   "status": "ready",
   "repo": "Nahaq789/pob",
+  "thread_ts": "1727770000.123456",
   "issue": {
     "title": "ログイン画面のエラーメッセージを日本語化",
     "background": "...",
@@ -131,8 +138,25 @@ n8n → Langfuse にスコア送信
   "questions": []
 }
 ```
-- 情報が足りない場合は `status: "need_more_info"` とし、`questions` に質問を入れる
+- 情報が足りない場合は `status: "need_more_info"` とし、`questions` に質問を入れる(`issue` は `null`)
+- 失敗した場合は `status: "error"` とし、`error` に `code` と `message` を入れる。n8n は `code` で分岐する
+
+  | `code` | 意味 | n8n での扱いの例 |
+  |---|---|---|
+  | `invalid_request` | 入力の形が不正 | ワークフローの不具合として通知 |
+  | `invalid_model_output` | モデルの出力が期待する形でなかった(会話は保存しない) | 「もう一度送ってください」 |
+  | `bedrock_access_denied` | Bedrock の呼び出しが拒否された(予算超過で Deny ポリシーが付いた場合など) | 「今月の上限に達しました」 |
+  | `conflict` | 同じスレッドが同時に処理された | 「もう一度送ってください」 |
+
+  上記以外の想定外のエラー(Bedrock のスロットリングなど)は Lambda の例外になる(Invoke の `FunctionError`)
 - 将来、難易度での振り分けに使うため、`difficulty` の追加を検討してよい
+
+### 整理役の会話履歴(DynamoDB)
+- テーブル `slack-issue-agent-conversations`、パーティションキー `thread_ts`。1 スレッド = 1 アイテム
+- 1 回の呼び出しごとに、ユーザー発言と整理役の結果(JSON)を 1 組ずつ追記する。最初のユーザー発言にはリポジトリ名を含める
+- Bedrock の呼び出しやモデル出力の検証に失敗した場合は保存しない
+- 同時更新は `version` による楽観ロックで検出する(`conflict` を返す)
+- 保存する発言は最大 40 件(古いものから捨てる)。`expires_at` による TTL で 30 日後に自動削除する
 
 ### ID の紐づけ
 - Slack スレッドの `thread_ts` を `session_id` として使う
@@ -199,13 +223,18 @@ n8n → Langfuse にスコア送信
   - このリポジトリでリソースの種類を増やしたり命名を変えたりした場合は、aws-bootstrap 側の権限も更新する(フェーズ2の ECR・AgentCore・DynamoDB も同様)
 
 ### フェーズ1で作るリソース(作成済み)
-- **整理役 Lambda**: Python 3.13 / arm64 / メモリ 512MB / タイムアウト 60秒。`archive_file` で `agents/organizer/` を zip 化
-  - 環境変数: `BEDROCK_MODEL_ID`、`LANGFUSE_HOST`、Langfuse 鍵の SSM パラメータ名2つ
+- **整理役 Lambda**: Python 3.13 / arm64 / メモリ 512MB / タイムアウト 60秒
+  - `scripts/build_organizer.sh` がコードと依存パッケージ(arm64 用)を `build/organizer/` に置き、`archive_file` がそれを zip 化する。`just plan` / `just apply` と CI はビルドを自動で行う
+  - 依存パッケージは uv で管理する(`agents/organizer/pyproject.toml`、`uv.lock`)。boto3 は Lambda ランタイム同梱のものを使い、zip には入れない
+  - 環境変数: `BEDROCK_MODEL_ID`、`LANGFUSE_HOST`、Langfuse 鍵の SSM パラメータ名2つ、`CONVERSATIONS_TABLE_NAME`
+  - Langfuse の鍵がダミー値のままか取得に失敗した場合は、トレースを送らずに動く
+- **DynamoDB テーブル**(`slack-issue-agent-conversations`): 整理役の会話履歴。オンデマンド、TTL 有効
 - **CloudWatch ロググループ**: Terraform で先に作成(保持7日)。Lambda に自動生成させない
 - **Lambda 実行ロール**(`force_detach_policies = true`。Budgets アクションが外部からポリシーを付けるため)
   - 自分のロググループへの書き込み
   - `bedrock:InvokeModel` / `InvokeModelWithResponseStream`。対象は `arn:aws:bedrock:*::foundation-model/anthropic.*` と `arn:aws:bedrock:*:<account>:inference-profile/*`(推論プロファイルはリージョンをまたぐためリージョンは `*`)
   - Langfuse 鍵の SSM パラメータ2つへの `ssm:GetParameter`
+  - 会話履歴テーブルへの `dynamodb:GetItem` / `PutItem`
 - **n8n 用 IAM ユーザー**: 整理役 Lambda への `lambda:InvokeFunction` のみ
 - **SSM パラメータ**: `/slack-issue-agent/langfuse/public_key`、`/slack-issue-agent/langfuse/secret_key`
 - **Budgets**: 予算、80% 通知、100% で Deny ポリシーを付与する Budgets アクション、その実行ロール
@@ -220,7 +249,7 @@ n8n → Langfuse にスコア送信
 ### フェーズ2で追加するリソース
 - ECR(`force_delete = true`、古いイメージを数世代で削除するライフサイクルポリシー)
 - AgentCore Runtime、Gateway、Identity
-- DynamoDB(オンデマンド、使用量カウンター)
+- DynamoDB(オンデマンド、使用量カウンター。会話履歴とは別テーブル)
 
 イメージのビルドと push は Terraform の外(Makefile または GitHub Actions)で行い、Terraform はイメージタグを変数で受け取るだけにする。
 初回のみ ECR リポジトリを先に作ってから push する必要がある。
@@ -232,11 +261,16 @@ n8n → Langfuse にスコア送信
 ├── infra/                  # Terraform
 ├── agents/
 │   ├── organizer/          # 整理役(Lambda)
-│   │   ├── core.py         # Issue 案を作るロジック本体(Bedrock 呼び出し・プロンプト)
-│   │   ├── lambda_app.py   # Lambda の入口(薄く保つ)
-│   │   ├── prompts/
-│   │   └── tests/
+│   │   ├── core.py         # Issue 案を作るロジック本体(Bedrock 呼び出し・出力の検証)。DynamoDB は知らない
+│   │   ├── history.py      # 会話履歴の DynamoDB への読み書き
+│   │   ├── lambda_app.py   # Lambda の入口(入力の検証と部品の組み立てだけ)
+│   │   ├── prompts/        # システムプロンプト
+│   │   ├── tests/          # 単体テスト(Bedrock は偽物、DynamoDB は moto)
+│   │   ├── pyproject.toml  # uv の設定(依存パッケージ)
+│   │   └── uv.lock
 │   └── implementer/        # 実装役(フェーズ2、AgentCore Runtime 用コンテナ)
+├── scripts/
+│   └── build_organizer.sh  # 整理役のデプロイ用ディレクトリを作る
 ├── n8n/
 │   ├── docker-compose.yml
 │   └── workflows/          # ワークフローを JSON でエクスポートして Git 管理
@@ -248,6 +282,9 @@ n8n → Langfuse にスコア送信
 
 - 整理役はロジックを `core.py` に閉じ込め、入口を薄くする(実行基盤を後から変えやすくするため)
 - 整理役は1回の呼び出しで済むため、エージェントフレームワークは使わず Bedrock の Converse API を直接使う
+  - 結果は `submit_result` ツールの呼び出しを強制(`toolChoice`)して JSON で受け取り、`core.py` で検証する
+  - システムプロンプトとツール定義はプロンプトキャッシュの対象にする(リポジトリ名など呼び出しごとに変わるものはユーザー発言に入れ、システムプロンプトは固定に保つ)
+- Python のパッケージ管理は uv。テストは `just test`
 - 実装役はエージェントフレームワーク(Strands Agents など)の利用を検討する
 
 ## 12. n8n
@@ -272,7 +309,7 @@ n8n → Langfuse にスコア送信
 ## 14. 未決事項
 
 - **Cloudflare Tunnel の URL 固定**: 固定 URL には Cloudflare 管理の独自ドメインが必要(年1,500円前後)。ドメインなしの Quick Tunnel は起動ごとに URL が変わり、Slack・GitHub・コールバック先の再設定が必要になる。ドメインを取得したら、トンネルと DNS も Terraform(Cloudflare プロバイダー)で管理する
-- **Bedrock のモデルアクセス**: モデル ID は `jp.anthropic.claude-sonnet-4-6` に決定。アカウントで Anthropic モデルの利用(ユースケース申請・モデルアクセス)が有効かは、整理役で初めて呼び出すときに確認する
+- **Bedrock の Anthropic ユースケース申請**: モデル ID は `jp.anthropic.claude-sonnet-4-6` に決定。2026-10-17 の呼び出しで `Model use case details have not been submitted for this account` が返ったため、Bedrock コンソールで Anthropic のユースケース申請フォームを提出する必要がある
 - **AgentCore の東京リージョン提供状況**: フェーズ2着手時に Runtime・Gateway が東京で使えるか確認。可能なら Lambda と同じリージョンに揃える
 - **実装役のモデル**: 国内処理(`jp.`)の方針を実装役にも適用するか。東京で使える `jp.` の Sonnet は 4.6 まで(2026-10 時点)
 - **最初の対象リポジトリと Slack チャンネル**

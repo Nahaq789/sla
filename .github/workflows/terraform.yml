@@ -1,6 +1,7 @@
 # infra/ の Terraform を GitHub Actions で plan / apply する。
-#   - pull_request    : plan 用ロール (gha-sla-plan) で fmt / validate / plan
+#   - pull_request    : 整理役の単体テストと、plan 用ロール (gha-sla-plan) で fmt / validate / plan
 #   - main への push  : apply 用ロール (gha-sla-apply) で apply
+# Lambda の zip は build/organizer/ から作るため、plan / apply の前に scripts/build_organizer.sh を実行する。
 #
 # ロールは aws-bootstrap リポジトリで作成している。
 # 信頼ポリシーの sub 条件が "pull_request" / "ref:refs/heads/main" のため、
@@ -14,12 +15,14 @@ on:
     paths:
       - "infra/**"
       - "agents/**"
+      - "scripts/**"
       - ".github/workflows/terraform.yml"
   push:
     branches: [main]
     paths:
       - "infra/**"
       - "agents/**"
+      - "scripts/**"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
 
@@ -41,6 +44,20 @@ defaults:
     working-directory: infra
 
 jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agents/organizer
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: pytest
+        run: uv run --frozen pytest
+
   plan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -62,6 +79,11 @@ jobs:
 
       - name: terraform fmt
         run: terraform fmt -check -diff -recursive
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: build organizer
+        run: ../scripts/build_organizer.sh
 
       - name: terraform init
         run: terraform init
@@ -105,6 +127,11 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: build organizer
+        run: ../scripts/build_organizer.sh
 
       - name: terraform init
         run: terraform init
