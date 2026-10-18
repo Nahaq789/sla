@@ -136,9 +136,13 @@ resource "aws_iam_user_policy" "n8n_invoke" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "lambda:InvokeFunction"
-        Resource = aws_lambda_function.organizer.arn
+        Effect = "Allow"
+        Action = "lambda:InvokeFunction"
+        # n8n の AWS Lambda ノードは Qualifier が必須 ($LATEST) で、修飾付き ARN として認可されるため両方を許可する
+        Resource = [
+          aws_lambda_function.organizer.arn,
+          "${aws_lambda_function.organizer.arn}:*",
+        ]
       }
     ]
   })
