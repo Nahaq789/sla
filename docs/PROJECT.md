@@ -308,9 +308,8 @@ n8n → Langfuse にスコア送信
 
 ## 14. 未決事項
 
-- **Cloudflare Tunnel の URL 固定**: 固定 URL には Cloudflare 管理の独自ドメインが必要(年1,500円前後)。ドメインなしの Quick Tunnel は起動ごとに URL が変わり、Slack・GitHub・コールバック先の再設定が必要になる。ドメインを取得したら、トンネルと DNS も Terraform(Cloudflare プロバイダー)で管理する
-- **Bedrock の Anthropic ユースケース申請**: モデル ID は `jp.anthropic.claude-sonnet-4-6` に決定。2026-10-17 の呼び出しで `Model use case details have not been submitted for this account` が返ったため、Bedrock コンソールで Anthropic のユースケース申請フォームを提出する必要がある
+- **Cloudflare Tunnel の URL 固定**: 当面は Quick Tunnel を使う(`just n8n-up` が URL を読み取って `WEBHOOK_URL` に設定する。URL が変わったら Slack App の Request URL を手で更新する)。固定 URL には Cloudflare 管理の独自ドメインが必要(年1,500円前後)。ドメインなしの Quick Tunnel は起動ごとに URL が変わり、Slack・GitHub・コールバック先の再設定が必要になる。ドメインを取得したら、トンネルと DNS も Terraform(Cloudflare プロバイダー)で管理する
 - **AgentCore の東京リージョン提供状況**: フェーズ2着手時に Runtime・Gateway が東京で使えるか確認。可能なら Lambda と同じリージョンに揃える
 - **実装役のモデル**: 国内処理(`jp.`)の方針を実装役にも適用するか。東京で使える `jp.` の Sonnet は 4.6 まで(2026-10 時点)
-- **最初の対象リポジトリと Slack チャンネル**
+- **最初の対象 Slack チャンネル**(対象リポジトリは `Nahaq789/pob` に決定)
 - **実装役の GitHub トークンの保管先**(Parameter Store か AgentCore Identity か)

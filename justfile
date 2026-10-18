@@ -47,6 +47,25 @@ build:
 test:
     uv run --project agents/organizer pytest agents/organizer
 
+# ===== n8n =====
+
+# n8n だけをローカルで起動（トンネルなし。初回のオーナーアカウント作成に使う）
+n8n-local:
+    docker compose -f n8n/docker-compose.yml up -d n8n
+    @echo "エディタ: http://localhost:5678"
+
+# Quick Tunnel と n8n を起動（公開 URL が変わったら表示される）
+n8n-up:
+    ./scripts/n8n_up.sh
+
+# n8n とトンネルを停止（データは残る）
+n8n-down:
+    docker compose -f n8n/docker-compose.yml down
+
+# ログを表示（例: just n8n-logs tunnel）
+n8n-logs service="n8n":
+    docker compose -f n8n/docker-compose.yml logs -f --tail 100 {{service}}
+
 # ===== SSM =====
 
 # Langfuse 公開鍵を SSM に投入（例: just ssm-public pk-lf-xxxx）

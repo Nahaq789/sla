@@ -1,0 +1,27 @@
+name: slack-issue-agent
+
+services:
+  n8n:
+    image: n8nio/n8n:2.43.7
+    restart: unless-stopped
+    ports:
+      # エディタはローカルからだけ開く。外部からは tunnel 経由で届く
+      - "127.0.0.1:5678:5678"
+    environment:
+      # .env は scripts/n8n_up.sh が書き出す (Quick Tunnel の URL は起動ごとに変わる)
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      # tunnel の 1 段のプロキシを経由するため、X-Forwarded-* を信頼する
+      - N8N_PROXY_HOPS=1
+      - GENERIC_TIMEZONE=Asia/Tokyo
+      - TZ=Asia/Tokyo
+      - N8N_DIAGNOSTICS_ENABLED=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.1
+    restart: "no"
+    command: tunnel --no-autoupdate --url http://n8n:5678
+
+volumes:
+  n8n_data:
