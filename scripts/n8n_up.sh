@@ -9,9 +9,12 @@ env_file="${root}/n8n/.env"
 
 "${compose[@]}" up -d tunnel
 
+# ログは再起動しても残るため、今回の起動以降のログだけから URL を探す (前回の URL を拾わないように)
+started_at="$(docker inspect --format '{{.State.StartedAt}}' "$("${compose[@]}" ps -q tunnel)")"
+
 url=""
 for _ in $(seq 1 30); do
-  url="$("${compose[@]}" logs tunnel 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -n 1 || true)"
+  url="$("${compose[@]}" logs --since "${started_at}" tunnel 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -n 1 || true)"
   [[ -n "${url}" ]] && break
   sleep 1
 done
