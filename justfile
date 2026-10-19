@@ -62,6 +62,10 @@ n8n-up:
 n8n-down:
     docker compose -f n8n/docker-compose.yml down
 
+# ワークフローを n8n/workflows/ に書き出す（ピン留めしたテストデータは取り除く）
+n8n-export:
+    ./scripts/n8n_export.sh
+
 # ログを表示（例: just n8n-logs tunnel）
 n8n-logs service="n8n":
     docker compose -f n8n/docker-compose.yml logs -f --tail 100 {{service}}
@@ -96,11 +100,12 @@ create-n8n-key:
 
 # ===== Lambda =====
 
-# 整理役 Lambda の動作確認（例: just invoke myorg/myrepo）
-invoke repo="myorg/myrepo":
+# 整理役 Lambda の動作確認（例: just invoke Nahaq789/casino-simulator "残高表示を3桁区切りにしたい"）
+# thread_ts は毎回新しい値にする（同じ値だと前回の会話の続きとして扱われる）
+invoke repo="Nahaq789/casino-simulator" message="テスト依頼":
     aws lambda invoke \
         --function-name slack-issue-agent-organizer \
-        --payload "{\"message\": \"テスト依頼\", \"thread_ts\": \"1234567890.123456\", \"repo\": \"{{repo}}\"}" \
+        --payload "{\"message\": \"{{message}}\", \"thread_ts\": \"$(date +%s.%6N)\", \"repo\": \"{{repo}}\"}" \
         --cli-binary-format raw-in-base64-out \
         --region ap-northeast-1 \
         /tmp/sla-response.json \

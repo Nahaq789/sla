@@ -1,0 +1,334 @@
+{
+  "updatedAt": "2026-10-19T22:44:35.007Z",
+  "createdAt": "2026-10-18T22:39:14.293Z",
+  "id": "YU6WzcXSpfrOvqVJ",
+  "name": "slack-issue-agent",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "trigger": [
+          "app_mention"
+        ],
+        "channelId": {
+          "__rl": true,
+          "value": "C0CA0J6C9NF",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "e1b79c8d-edcd-4219-9175-96c39d46e56c",
+      "name": "Slack Trigger",
+      "webhookId": "895495cc-3f62-4298-9858-33b38359cdf4",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a93cb257-fcd4-4e71-a574-4dd349f4e955",
+              "name": "message",
+              "value": "={{ $json.text.replace(/<@[A-Z0-9]+>/g, '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "c7665072-9c96-45c9-80b0-330389ecbf03",
+              "name": "thread_ts",
+              "value": "={{ $json.thread_ts ?? $json.ts }}",
+              "type": "string"
+            },
+            {
+              "id": "de49b89f-bb23-4368-9f92-91006d3fd76d",
+              "name": "message_ts",
+              "value": "={{ $json.ts }}",
+              "type": "string"
+            },
+            {
+              "id": "3dd984a3-73bc-4741-9434-f1ee8f7ebc9b",
+              "name": "repo",
+              "value": "={{ ({ \"C0CA0J6C9NF\": \"Nahaq789/casino-simulator\" })[$json.channel] }}",
+              "type": "string"
+            },
+            {
+              "id": "016bb991-9f53-4017-8ee5-ec36f5ff3052",
+              "name": "channel",
+              "value": "={{ $json.channel }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "bd8f26e6-2579-40e9-a4ba-a73cfd560e19",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "function": "=slack-issue-agent-organizer",
+        "payload": "={{ JSON.stringify({ message: $json.message, thread_ts: $json.thread_ts, message_ts: $json.message_ts, repo: $json.repo }) }}"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "id": "f001e072-fa7a-4438-8069-87a71de077be",
+      "name": "AWS Lambda",
+      "credentials": {
+        "aws": {
+          "id": "cEaSdIt6mNivq7kW",
+          "name": "AWS slack-issue-agent-n8n"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.result.status }}",
+                    "rightValue": "need_more_info",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "f290882b-4e79-4097-bff8-32b17c8fcedb"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "質問が必要"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9322b8e0-fece-480b-818c-aed934d85114",
+                    "leftValue": "={{ $json.result.status }}",
+                    "rightValue": "ready",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "=Issue案投稿の条件"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        0
+      ],
+      "id": "74188e02-4304-46f1-baa7-d5a2be094955",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Edit Fields').item.json.channel }}",
+          "mode": "id"
+        },
+        "text": "=確認させてください。\n\n{{ $json.result.questions.map((q, i) => `${i + 1}. ${q}`).join('\\n') }}\n\nこのスレッドで @issue-agent を付けて回答してください。",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Edit Fields').item.json.thread_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1008,
+        -208
+      ],
+      "id": "069bf73e-cfe1-4aa0-a173-bd4ab150c85c",
+      "name": "Send a message",
+      "webhookId": "5931f304-5e5a-4a83-b5ad-0210b5c8d977",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Edit Fields').item.json.channel }}",
+          "mode": "id"
+        },
+        "text": "=Issue 案を作成しました。\n\n*{{ $json.result.issue.title }}*\n\n*背景*\n{{ $json.result.issue.background }}\n\n*タスク*\n{{ $json.result.issue.tasks.map(t => `• ${t}`).join('\\n') }}\n\n*完了条件*\n{{ $json.result.issue.acceptance_criteria.map(c => `• ${c}`).join('\\n') }}\n\n*ラベル*: {{ $json.result.issue.labels.join(', ') || 'なし' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Edit Fields').item.json.thread_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1008,
+        -16
+      ],
+      "id": "a31ea6c3-5ae7-4664-b0ba-099cadc32ba9",
+      "name": "create interactive",
+      "webhookId": "5931f304-5e5a-4a83-b5ad-0210b5c8d977",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Slack Trigger": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Lambda": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "create interactive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "versionId": "1e701a06-45fe-41a8-bb7a-751f589134bf",
+  "activeVersionId": "1e701a06-45fe-41a8-bb7a-751f589134bf",
+  "versionCounter": 82,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-10-18T22:39:14.295Z",
+      "createdAt": "2026-10-18T22:39:14.295Z",
+      "role": "workflow:owner",
+      "workflowId": "YU6WzcXSpfrOvqVJ",
+      "projectId": "SgUho2aVGiH7cd7J",
+      "project": {
+        "updatedAt": "2026-10-18T04:43:28.075Z",
+        "createdAt": "2026-10-18T04:38:24.491Z",
+        "id": "SgUho2aVGiH7cd7J",
+        "name": "naha q <REDACTED>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "4ca30048-1f1f-4832-9d68-87477fb2d7b4"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "v8 Issue案",
+    "description": ""
+  }
+}
