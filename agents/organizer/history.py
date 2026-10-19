@@ -2,6 +2,8 @@
 
 1 スレッド (thread_ts) = 1 アイテム。整理役の 1 回の呼び出しごとに、
 ユーザー発言と整理役の結果を 1 組ずつ追記していく。
+Issue 案 (status が ready の結果) は、そのときのユーザー発言の Slack ts を draft_id として別に残す
+(Slack の [作成] ボタンが、修正前の案も含めてどの案から Issue を作るかを指定できるように)。
 """
 
 from __future__ import annotations
@@ -19,6 +21,9 @@ TTL_SECONDS = 30 * 24 * 60 * 60
 # 1 スレッドに保存する発言数の上限 (DynamoDB のアイテム上限 400KB を超えないようにする)
 MAX_STORED_MESSAGES = 40
 
+# 1 スレッドに残す Issue 案の数の上限 (古いものから捨てる)
+MAX_STORED_DRAFTS = 10
+
 
 class ConflictError(Exception):
     """同じスレッドの会話が、読み込み後に別の呼び出しで更新されていた"""
@@ -27,12 +32,15 @@ class ConflictError(Exception):
 @dataclass
 class Conversation:
     thread_ts: str
+    repo: str | None = None
     messages: list[Message] = field(default_factory=list)
     # 楽観ロック用。保存のたびに 1 増える。0 は未保存 (新規の会話)
     version: int = 0
     # 最後に処理したユーザー発言の Slack ts と、そのときの結果 (再送時に同じ結果を返すため)
     last_message_ts: str | None = None
     last_result: dict[str, Any] | None = None
+    # draft_id (ユーザー発言の Slack ts) → Issue 案。古い順
+    drafts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class ConversationStore:
@@ -46,10 +54,12 @@ class ConversationStore:
             return Conversation(thread_ts=thread_ts)
         return Conversation(
             thread_ts=thread_ts,
+            repo=item.get("repo"),
             messages=[Message(**m) for m in json.loads(item["messages"])],
             version=int(item["version"]),
             last_message_ts=item.get("last_message_ts"),
             last_result=json.loads(item["last_result"]) if "last_result" in item else None,
+            drafts=json.loads(item["drafts"]) if "drafts" in item else {},
         )
 
     def save(
@@ -68,12 +78,18 @@ class ConversationStore:
             drop = len(messages) - MAX_STORED_MESSAGES
             messages = messages[drop + drop % 2 :]
 
+        drafts = dict(conversation.drafts)
+        if result.get("status") == "ready" and message_ts:
+            drafts[message_ts] = result["issue"]
+            drafts = dict(list(drafts.items())[-MAX_STORED_DRAFTS:])
+
         item: dict[str, Any] = {
             "thread_ts": conversation.thread_ts,
             "repo": repo,
             "messages": json.dumps([m.__dict__ for m in messages], ensure_ascii=False),
             "version": conversation.version + 1,
             "last_result": json.dumps(result, ensure_ascii=False),
+            "drafts": json.dumps(drafts, ensure_ascii=False),
             "updated_at": int(time.time()),
             "expires_at": int(time.time()) + TTL_SECONDS,
         }

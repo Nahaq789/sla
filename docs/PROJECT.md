@@ -24,8 +24,9 @@ Cloudflare Tunnel → n8n(自宅PC)
   ↓ Lambda Invoke
 整理役 Lambda(Bedrock Claude Sonnet)
   ↓ Issue 案(JSON)を返す
-n8n → Slack スレッドに「この内容で作成しますか?」[作成][修正]
+n8n → Slack スレッドに Issue 案を投稿 [作成]
   ↓ 情報不足なら質問をスレッドに返して聞き返す
+  ↓ 直したい場合はスレッドで bot に修正を指示 → 修正版の Issue 案を投稿
   ↓ [作成] 押下
 n8n → GitHub に Issue 作成 → Slack に Issue リンクを通知 [PRも作る][自分でやる]
   ↓ [PRも作る] 押下(フェーズ2)
@@ -87,8 +88,11 @@ n8n → Langfuse にスコア送信
 | n8n はセルフホスト | 無料。Slack 連携と承認ステップを GUI で組める |
 | Langfuse は Cloud(Hobby) | セルフホストは Postgres・ClickHouse・Redis・S3 が必要で重い。AWS からトレースを送る経路も単純になる |
 | Langfuse は日本リージョン(`https://jp.cloud.langfuse.com`) | トレースにはプロンプトと Issue 案の本文が残るため、推論と同様にデータも国内(東京)に置く。料金はリージョンによらず同じ。リージョンは後から変更できない(アカウントの作り直しが必要) |
-| 聞き返し・修正の会話は整理役が DynamoDB に保存する | n8n は `thread_ts` と最新の発言を渡すだけで済む。Slack の表示内容から組み立て直すのではなく、整理役が返した JSON をそのまま次の呼び出しに使えるため、[修正] の精度が上がる。費用は月 1 円未満。Lambda 自体は状態を持たず、毎回 DynamoDB から読み書きする |
+| 聞き返し・修正の会話は整理役が DynamoDB に保存する | n8n は `thread_ts` と最新の発言を渡すだけで済む。Slack の表示内容から組み立て直すのではなく、整理役が返した JSON をそのまま次の呼び出しに使えるため、修正指示の精度が上がる。費用は月 1 円未満。Lambda 自体は状態を持たず、毎回 DynamoDB から読み書きする |
 | 整理役の Lambda は 1 本 | 会話の読み込み → Bedrock 呼び出し → 保存を 1 回の呼び出しで行う。部品の分離はファイル単位で行う(`core.py` / `history.py` / `lambda_app.py`) |
+| Issue 案のボタンは [作成] だけ | 修正はスレッドで bot に文章で指示すればよく、[修正] ボタンを置いても結局文章で書いてもらうことになるため |
+| [作成] はボタンの付いた案から Issue を作る | 修正を重ねても、修正前の案で作れるようにするため。整理役が Issue 案を `draft_id`(その時のユーザー発言の `ts`)ごとに保存し、ボタンには `thread_ts` と `draft_id` だけを持たせる(ボタンの値は 2,000 文字までのため、案そのものは載せない) |
+| ボタンのリクエストは n8n で Slack の署名を検証する | ボタン押下は Webhook ノードで受けるが、Slack Trigger と違い署名を検証しないため。検証しないと、URL を知った人が Issue を作れてしまう。Signing Secret は `n8n/.env`(Git 管理外)から環境変数で渡す |
 | 1 Slack チャンネル = 1 リポジトリ | リポジトリを文章から推測しなくてよく、誤爆がない |
 | リージョンは ap-northeast-1(東京) | |
 | IaC は Terraform | `terraform destroy` で一括削除できるようにするため |
@@ -117,10 +121,20 @@ n8n → Langfuse にスコア送信
   "message_ts": "1727770000.123456"
 }
 ```
-- 初回も聞き返しへの回答も [修正] の指示も、同じ形で呼ぶ。`message` には**最新の発言だけ**を入れる
+- 初回も聞き返しへの回答も修正の指示も、同じ形で呼ぶ。`action` は省略する(`"organize"` と同じ)。`message` には**最新の発言だけ**を入れる
 - それまでの会話は、整理役が `thread_ts` をキーに DynamoDB から読み出す(n8n は会話を組み立てない)
 - `message_ts` はユーザー発言の Slack の `ts`(省略可)。同じ値で再度呼ばれた場合は、Bedrock を呼ばずに前回の結果を返す(Slack の再送対策)
 - `message` は 4,000 文字まで。`repo` は `owner/repo` 形式
+
+保存済みの Issue 案を取り出す場合(Slack の [作成] ボタン用。Bedrock は呼ばない):
+```json
+{
+  "action": "get_issue",
+  "thread_ts": "1727770000.123456",
+  "draft_id": "1727770100.654321"
+}
+```
+- 出力は `{"status": "ready", "repo", "thread_ts", "draft_id", "issue"}`。見つからなければ `draft_not_found`
 
 ### 整理役 Lambda の出力
 ```json
@@ -128,6 +142,7 @@ n8n → Langfuse にスコア送信
   "status": "ready",
   "repo": "Nahaq789/pob",
   "thread_ts": "1727770000.123456",
+  "draft_id": "1727770100.654321",
   "issue": {
     "title": "ログイン画面のエラーメッセージを日本語化",
     "background": "...",
@@ -138,6 +153,7 @@ n8n → Langfuse にスコア送信
   "questions": []
 }
 ```
+- `draft_id` は `ready` のときだけ付く。入力の `message_ts` と同じ値(省略された場合は `null` で、[作成] には使えない)
 - 情報が足りない場合は `status: "need_more_info"` とし、`questions` に質問を入れる(`issue` は `null`)
 - 失敗した場合は `status: "error"` とし、`error` に `code` と `message` を入れる。n8n は `code` で分岐する
 
@@ -147,6 +163,7 @@ n8n → Langfuse にスコア送信
   | `invalid_model_output` | モデルの出力が期待する形でなかった(会話は保存しない) | 「もう一度送ってください」 |
   | `bedrock_access_denied` | Bedrock の呼び出しが拒否された(予算超過で Deny ポリシーが付いた場合など) | 「今月の上限に達しました」 |
   | `conflict` | 同じスレッドが同時に処理された | 「もう一度送ってください」 |
+  | `draft_not_found` | `get_issue` で指定した Issue 案がない(30 日経過、または 1 スレッド 10 件を超えて削除された) | 「この案は期限切れです。もう一度依頼してください」 |
 
   上記以外の想定外のエラー(Bedrock のスロットリングなど)は Lambda の例外になる(Invoke の `FunctionError`)
 - 将来、難易度での振り分けに使うため、`difficulty` の追加を検討してよい
@@ -156,6 +173,7 @@ n8n → Langfuse にスコア送信
 - 1 回の呼び出しごとに、ユーザー発言と整理役の結果(JSON)を 1 組ずつ追記する。最初のユーザー発言にはリポジトリ名を含める
 - Bedrock の呼び出しやモデル出力の検証に失敗した場合は保存しない
 - 同時更新は `version` による楽観ロックで検出する(`conflict` を返す)
+- `ready` の結果の Issue 案は、`draft_id` をキーに `drafts` にも残す(最大 10 件、古いものから捨てる)。[作成] ボタンはここから取り出す
 - 保存する発言は最大 40 件(古いものから捨てる)。`expires_at` による TTL で 30 日後に自動削除する
 
 ### ID の紐づけ
@@ -312,4 +330,5 @@ n8n → Langfuse にスコア送信
 - **AgentCore の東京リージョン提供状況**: フェーズ2着手時に Runtime・Gateway が東京で使えるか確認。可能なら Lambda と同じリージョンに揃える
 - **実装役のモデル**: 国内処理(`jp.`)の方針を実装役にも適用するか。東京で使える `jp.` の Sonnet は 4.6 まで(2026-10 時点)
 - **最初の対象 Slack チャンネルとリポジトリ**: `#casino-issue`(チャンネル ID `C0CA0J6C9NF`)→ `Nahaq789/casino-simulator` に決定(決定済み。対応表を n8n に書いたらこの項目は削除する)
+- **1 つの依頼から複数の Issue を作る**: 「A と B を直したい」を 2 つの Issue に分けるなど。整理役が複数の Issue 案を返す形に出力を変える必要がある(今は 1 依頼 = 1 Issue 案)
 - **実装役の GitHub トークンの保管先**(Parameter Store か AgentCore Identity か)

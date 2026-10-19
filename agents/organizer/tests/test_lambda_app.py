@@ -128,3 +128,53 @@ def test_tracing_with_real_langfuse_client(store):
     tracer.flush()
     assert ok["status"] == "ready"
     assert ng["error"]["code"] == "invalid_model_output"
+
+
+def test_ready_returns_draft_id_and_need_more_info_does_not(store):
+    bedrock = FakeBedrock(tool_response(NEED_MORE_INFO), tool_response(READY))
+    first = call(store, bedrock, "直して", "1.0")
+    second = call(store, bedrock, "パスワード誤りのとき", "2.0")
+    assert "draft_id" not in first
+    assert second["draft_id"] == "2.0"
+
+    # 再送で前回の結果を返すときも draft_id を付ける
+    again = call(store, bedrock, "パスワード誤りのとき", "2.0")
+    assert again == second
+
+
+def test_get_issue_returns_the_requested_draft(store):
+    revised = READY | {"issue": READY["issue"] | {"title": "修正後のタイトル"}}
+    bedrock = FakeBedrock(tool_response(READY), tool_response(revised))
+    call(store, bedrock, "直して", "1.0")
+    call(store, bedrock, "タイトルを変えて", "2.0")
+
+    # 修正前の案 (1.0) も、修正後の案 (2.0) も取り出せる
+    old = handle({"action": "get_issue", "thread_ts": THREAD, "draft_id": "1.0"}, store=store, bedrock=bedrock, model_id=MODEL_ID)
+    new = handle({"action": "get_issue", "thread_ts": THREAD, "draft_id": "2.0"}, store=store, bedrock=bedrock, model_id=MODEL_ID)
+    assert old == {"status": "ready", "repo": REPO, "thread_ts": THREAD, "draft_id": "1.0", "issue": READY["issue"]}
+    assert new["issue"]["title"] == "修正後のタイトル"
+
+
+@pytest.mark.parametrize(
+    "event, code",
+    [
+        ({"action": "get_issue", "thread_ts": THREAD, "draft_id": "9.9"}, "draft_not_found"),
+        ({"action": "get_issue", "thread_ts": "0.0", "draft_id": "1.0"}, "draft_not_found"),
+        ({"action": "get_issue", "thread_ts": THREAD}, "invalid_request"),
+        ({"action": "delete", "thread_ts": THREAD}, "invalid_request"),
+    ],
+)
+def test_get_issue_errors(store, event, code):
+    call(store, FakeBedrock(tool_response(READY)), "直して", "1.0")
+    result = handle(event, store=store, bedrock=FakeBedrock(), model_id=MODEL_ID)
+    assert result["status"] == "error"
+    assert result["error"]["code"] == code
+
+
+def test_old_drafts_are_trimmed(store, monkeypatch):
+    monkeypatch.setattr(history, "MAX_STORED_DRAFTS", 2)
+    bedrock = FakeBedrock(*[tool_response(READY) for _ in range(3)])
+    for i in range(3):
+        call(store, bedrock, f"発言{i}", str(i))
+
+    assert list(store.load(THREAD).drafts) == ["1", "2"]
