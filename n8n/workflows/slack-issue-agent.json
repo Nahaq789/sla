@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-10-19T22:44:35.007Z",
+  "createdAt": "2026-10-18T22:39:14.293Z",
+  "id": "YU6WzcXSpfrOvqVJ",
   "name": "slack-issue-agent",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -121,7 +127,8 @@
                 ],
                 "combinator": "and"
               },
-              "renameOutput": true
+              "renameOutput": true,
+              "outputKey": "質問が必要"
             },
             {
               "conditions": {
@@ -162,9 +169,76 @@
       ],
       "id": "74188e02-4304-46f1-baa7-d5a2be094955",
       "name": "Switch"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Edit Fields').item.json.channel }}",
+          "mode": "id"
+        },
+        "text": "=確認させてください。\n\n{{ $json.result.questions.map((q, i) => `${i + 1}. ${q}`).join('\\n') }}\n\nこのスレッドで @issue-agent を付けて回答してください。",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Edit Fields').item.json.thread_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1008,
+        -208
+      ],
+      "id": "069bf73e-cfe1-4aa0-a173-bd4ab150c85c",
+      "name": "Send a message",
+      "webhookId": "5931f304-5e5a-4a83-b5ad-0210b5c8d977",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Edit Fields').item.json.channel }}",
+          "mode": "id"
+        },
+        "text": "=Issue 案を作成しました。\n\n*{{ $json.result.issue.title }}*\n\n*背景*\n{{ $json.result.issue.background }}\n\n*タスク*\n{{ $json.result.issue.tasks.map(t => `• ${t}`).join('\\n') }}\n\n*完了条件*\n{{ $json.result.issue.acceptance_criteria.map(c => `• ${c}`).join('\\n') }}\n\n*ラベル*: {{ $json.result.issue.labels.join(', ') || 'なし' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Edit Fields').item.json.thread_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1008,
+        -16
+      ],
+      "id": "a31ea6c3-5ae7-4664-b0ba-099cadc32ba9",
+      "name": "create interactive",
+      "webhookId": "5931f304-5e5a-4a83-b5ad-0210b5c8d977",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
     }
   ],
-  "pinData": {},
   "connections": {
     "Slack Trigger": {
       "main": [
@@ -198,19 +272,63 @@
           }
         ]
       ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "create interactive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "5623cfe7-7b30-40f1-90fa-1f5a7c2d0ba6",
+  "staticData": null,
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "6551bba1b918d4a967671a1d3849d6f7e03a36ae39d687636f58044d7d5e52b5"
+    "templateCredsSetupCompleted": true
   },
   "nodeGroups": [],
-  "id": "YU6WzcXSpfrOvqVJ",
-  "tags": []
+  "versionId": "1e701a06-45fe-41a8-bb7a-751f589134bf",
+  "activeVersionId": "1e701a06-45fe-41a8-bb7a-751f589134bf",
+  "versionCounter": 82,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-10-18T22:39:14.295Z",
+      "createdAt": "2026-10-18T22:39:14.295Z",
+      "role": "workflow:owner",
+      "workflowId": "YU6WzcXSpfrOvqVJ",
+      "projectId": "SgUho2aVGiH7cd7J",
+      "project": {
+        "updatedAt": "2026-10-18T04:43:28.075Z",
+        "createdAt": "2026-10-18T04:38:24.491Z",
+        "id": "SgUho2aVGiH7cd7J",
+        "name": "naha q <nahaq789-fafaq@outlook.jp>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "4ca30048-1f1f-4832-9d68-87477fb2d7b4"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "v8 Issue案",
+    "description": ""
+  }
 }
