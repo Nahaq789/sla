@@ -3,16 +3,23 @@
 入力の検証、部品 (Bedrock・DynamoDB・Langfuse) の組み立て、結果の整形だけを行い、
 Issue 案を作るロジックは core.py、会話の保存は history.py に任せる。
 
-入力:
+入力 (整理する。action は省略可):
     {
       "message": "ユーザーの発言",
       "thread_ts": "Slack スレッドの ts (会話のキー、Langfuse の session_id)",
       "repo": "owner/repo",
-      "message_ts": "ユーザー発言の Slack ts (省略可。同じ値で再送されたら前回の結果を返す)"
+      "message_ts": "ユーザー発言の Slack ts (省略可。同じ値で再送されたら前回の結果を返す。ready の案の draft_id になる)"
     }
 出力:
     {"status": "ready" | "need_more_info", "repo", "thread_ts", "issue", "questions"}
-    失敗時: {"status": "error", "repo", "thread_ts", "error": {"code", "message"}}
+    ready のときは "draft_id" (message_ts。省略された場合は null) も返す
+
+入力 (保存済みの Issue 案を取り出す。Slack の [作成] ボタン用):
+    {"action": "get_issue", "thread_ts": "...", "draft_id": "..."}
+出力:
+    {"status": "ready", "repo", "thread_ts", "draft_id", "issue"}
+
+失敗時: {"status": "error", "repo", "thread_ts", "error": {"code", "message"}}
 """
 
 from __future__ import annotations
@@ -71,6 +78,12 @@ def handle(
     thread_ts = event.get("thread_ts") if isinstance(event, dict) else None
     repo = event.get("repo") if isinstance(event, dict) else None
 
+    action = event.get("action", "organize") if isinstance(event, dict) else "organize"
+    if action == "get_issue":
+        return _get_issue(event, store)
+    if action != "organize":
+        return _error(repo, thread_ts, "invalid_request", f"action が不正です: {action}")
+
     try:
         message, thread_ts, repo, message_ts = _parse(event)
     except InvalidRequestError as e:
@@ -108,7 +121,7 @@ def _process(message, thread_ts, repo, message_ts, store, bedrock, model_id, tra
     # Slack の再送などで同じ発言が届いた場合は、Bedrock を呼ばずに前回の結果を返す
     if message_ts and message_ts == conversation.last_message_ts and conversation.last_result:
         logger.info("同じ発言の再送のため前回の結果を返します: thread_ts=%s", thread_ts)
-        return {"repo": repo, "thread_ts": thread_ts, **conversation.last_result}
+        return _response(repo, thread_ts, message_ts, conversation.last_result)
 
     user_text = core.first_user_text(repo, message) if not conversation.messages else message
     user_message = core.Message(role="user", text=user_text)
@@ -140,7 +153,37 @@ def _process(message, thread_ts, repo, message_ts, store, bedrock, model_id, tra
         logger.warning("同じスレッドが同時に処理されました: thread_ts=%s", thread_ts)
         return _error(repo, thread_ts, "conflict", "同じスレッドの依頼が同時に処理されました。もう一度送ってください")
 
-    return {"repo": repo, "thread_ts": thread_ts, **result}
+    return _response(repo, thread_ts, message_ts, result)
+
+
+def _response(repo: str, thread_ts: str, message_ts: str | None, result: dict[str, Any]) -> dict[str, Any]:
+    response = {"repo": repo, "thread_ts": thread_ts, **result}
+    if result["status"] == "ready":
+        response["draft_id"] = message_ts
+    return response
+
+
+def _get_issue(event: dict[str, Any], store: ConversationStore) -> dict[str, Any]:
+    """保存済みの Issue 案を取り出す (Bedrock は呼ばない)"""
+    thread_ts = event.get("thread_ts")
+    draft_id = event.get("draft_id")
+    if not isinstance(thread_ts, str) or not thread_ts.strip():
+        return _error(None, thread_ts, "invalid_request", "thread_ts は空でない文字列である必要があります")
+    if not isinstance(draft_id, str) or not draft_id.strip():
+        return _error(None, thread_ts, "invalid_request", "draft_id は空でない文字列である必要があります")
+
+    conversation = store.load(thread_ts)
+    issue = conversation.drafts.get(draft_id)
+    if issue is None:
+        return _error(conversation.repo, thread_ts, "draft_not_found", "指定された Issue 案が見つかりません (30 日以上前の案や、1 スレッド 10 件を超えた古い案は削除されます)")
+
+    return {
+        "status": "ready",
+        "repo": conversation.repo,
+        "thread_ts": thread_ts,
+        "draft_id": draft_id,
+        "issue": issue,
+    }
 
 
 def _parse(event: Any) -> tuple[str, str, str, str | None]:
