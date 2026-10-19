@@ -62,6 +62,10 @@ n8n-up:
 n8n-down:
     docker compose -f n8n/docker-compose.yml down
 
+# ワークフローを n8n/workflows/ に書き出す（ピン留めしたテストデータは取り除く）
+n8n-export:
+    ./scripts/n8n_export.sh
+
 # ログを表示（例: just n8n-logs tunnel）
 n8n-logs service="n8n":
     docker compose -f n8n/docker-compose.yml logs -f --tail 100 {{service}}
