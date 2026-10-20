@@ -28,7 +28,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        176,
+        208,
         0
       ],
       "id": "e5c5f0bb-ca11-42cb-94c1-e70332c914d6",
@@ -42,7 +42,7 @@
       "type": "n8n-nodes-base.awsLambda",
       "typeVersion": 1,
       "position": [
-        352,
+        416,
         0
       ],
       "id": "33c3d1c6-7c20-4476-85ef-0e6a96c9afdb",
@@ -52,7 +52,8 @@
           "id": "cEaSdIt6mNivq7kW",
           "name": "AWS slack-issue-agent-n8n"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -68,13 +69,13 @@
         },
         "title": "={{ $json.result.issue.title }}",
         "body": "=## 背景\n{{ $json.result.issue.background }}\n\n## タスク\n{{ $json.result.issue.tasks.map(t => `- [ ] ${t}`).join('\\n') }}\n\n## 完了条件\n{{ $json.result.issue.acceptance_criteria.map(c => `- [ ] ${c}`).join('\\n') }}\n\n---\nSlack から slack-issue-agent で作成（thread_ts: {{ $json.result.thread_ts }}）",
-        "labels": [],
+        "labels": "={{ $json.result.issue.labels.map(label => ({ label })) }}",
         "assignees": []
       },
       "type": "n8n-nodes-base.github",
       "typeVersion": 1.1,
       "position": [
-        528,
+        848,
         0
       ],
       "id": "dc23f7b2-1158-4b4d-ab56-7cb2d5197924",
@@ -85,7 +86,8 @@
           "id": "qad2afJxHdz97mmB",
           "name": "GitHub account"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -105,12 +107,79 @@
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.7,
       "position": [
-        752,
-        0
+        1072,
+        -96
       ],
       "id": "0c4bd48f-f225-4bc2-9349-28db87f2f963",
       "name": "Update a message",
       "webhookId": "fa36d07f-56e4-4491-bf7f-f4793d023f23",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7e5c3a9a-c73b-4ec9-afaf-8f6ad347de4f",
+              "leftValue": "={{ $json.result.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "ready"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        0
+      ],
+      "id": "c80749d4-b222-441a-9a57-b8a7aeae28c8",
+      "name": "Issue 案あり?"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Code in JavaScript').item.json.channel }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.result?.error?.code === 'draft_not_found' ? 'この Issue 案は見つかりませんでした (30 日以上前の案や、1 スレッド 10 件を超えた古い案は削除されます)。もう一度依頼してください。' : 'Issue の作成に失敗しました。n8n の Executions でエラーの内容を確認してください (GitHub のトークンの期限切れなどが考えられます)。' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Code in JavaScript').item.json.thread_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1072,
+        160
+      ],
+      "id": "ac0a70b3-9cfc-40a2-893d-bfb68bea342f",
+      "name": "Slack 作成失敗",
+      "webhookId": "154cb8d4-8426-4d2e-86c4-74b689c80b41",
       "credentials": {
         "slackApi": {
           "id": "4WuRAfJvn5G4x9iT",
@@ -146,7 +215,14 @@
       "main": [
         [
           {
-            "node": "Create an issue",
+            "node": "Issue 案あり?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack 作成失敗",
             "type": "main",
             "index": 0
           }
@@ -158,6 +234,31 @@
         [
           {
             "node": "Update a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack 作成失敗",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Issue 案あり?": {
+      "main": [
+        [
+          {
+            "node": "Create an issue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack 作成失敗",
             "type": "main",
             "index": 0
           }

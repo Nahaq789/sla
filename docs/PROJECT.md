@@ -100,12 +100,11 @@ n8n → Langfuse にスコア送信
 ## 6. マルチリポジトリ対応
 
 - n8n がチャンネル ID → リポジトリの対応表を持つ。キーはチャンネル名ではなく**チャンネル ID**
-  ```json
-  {
-    "C0123ABCD": { "repo": "Nahaq789/pob" }
-  }
+  ```js
+  ({ "C0CA0J6C9NF": "Nahaq789/casino-simulator" })   // #casino-issue
   ```
-- 対応表は当面 n8n のワークフロー内(Set / Code ノード)に直接書く。数が増えたら外部ストアへ移す
+- 対応表は当面 n8n のワークフロー `slack-issue-agent` の Edit Fields ノード(`repo` の式)に直接書く。数が増えたら外部ストアへ移す
+- Slack Trigger はワークスペース全体の `app_mention` を受ける(bot が招待されたチャンネルのメンションだけが届く)。対応表にないチャンネルかどうかは n8n が判定する
 - 対応表にないチャンネルでメンションされたら「このチャンネルはリポジトリに紐づいていません」と返して終了
 - 整理役はリポジトリを判定しない。渡された `repo` をそのまま Issue 案に載せる
 - フェーズ2では、各リポジトリに `AGENTS.md`(言語、テストコマンド、規約)を置き、実装役が最初に読む
@@ -117,7 +116,7 @@ n8n → Langfuse にスコア送信
 {
   "message": "ログイン画面のエラーメッセージを日本語にして",
   "thread_ts": "1727770000.123456",
-  "repo": "Nahaq789/pob",
+  "repo": "Nahaq789/casino-simulator",
   "message_ts": "1727770000.123456"
 }
 ```
@@ -140,7 +139,7 @@ n8n → Langfuse にスコア送信
 ```json
 {
   "status": "ready",
-  "repo": "Nahaq789/pob",
+  "repo": "Nahaq789/casino-simulator",
   "thread_ts": "1727770000.123456",
   "draft_id": "1727770100.654321",
   "issue": {
@@ -312,7 +311,18 @@ n8n → Langfuse にスコア送信
 - `WEBHOOK_URL` に Cloudflare Tunnel の公開 URL を設定
 - PC が停止している間は動かない(お試しのため許容)
 - Slack Trigger は Webhook 方式を使う(Socket Mode は使わない)
-- Slack は3秒以内に応答しないとイベントを再送するため、重い処理は非同期にする
+- Slack は3秒以内に応答しないとイベントを再送するため、重い処理は非同期にする(Slack Trigger と Webhook ノードは受信直後に応答する)
+- ワークフローは 2 本。JSON を `n8n/workflows/` に置いて Git 管理する(`just n8n-export` で書き出す)
+
+  | ワークフロー | きっかけ | 処理 |
+  |---|---|---|
+  | `slack-issue-agent` | Slack Trigger(`app_mention`) | 対応表でリポジトリを決める → 整理役 → 質問 / Issue 案([作成] ボタン付き)/ エラーをスレッドに返信 |
+  | `slack-issue-create` | Webhook `/webhook/slack-interactivity`(Slack の Interactivity) | 署名検証 → 整理役 `get_issue` → GitHub に Issue 作成(ラベル付き)→ メッセージを書き換えてボタンを消す。失敗したらスレッドに返信 |
+
+- Slack Trigger を使うワークフローは、Publish 中は編集画面でテスト実行できない。変更は Save → Publish → Slack でメンション → Executions で確認する
+- Webhook ノードは Slack の署名を検証しないため、Code ノードで検証する(Signing Secret は `n8n/.env` の `SLACK_SIGNING_SECRET`)。Code ノードで `$env` と `crypto` を使うため、`N8N_BLOCK_ENV_ACCESS_IN_NODE=false`、`NODE_FUNCTION_ALLOW_BUILTIN=crypto` を設定している
+- [作成] の連打で Issue が重複する可能性は残る(1 回目の作成後にボタンを消すまでの数秒間)。お試しのため許容する
+- GitHub トークンは Fine-grained token(対象リポジトリの Issues: Read and write だけ)。期限付きなので、切れたら作り直して n8n の認証情報を更新する
 
 ## 13. 削除手順(プロジェクト廃止時)
 
@@ -329,6 +339,5 @@ n8n → Langfuse にスコア送信
 - **Cloudflare Tunnel の URL 固定**: 当面は Quick Tunnel を使う(`just n8n-up` が URL を読み取って `WEBHOOK_URL` に設定する。URL が変わったら Slack App の Request URL を手で更新する)。固定 URL には Cloudflare 管理の独自ドメインが必要(年1,500円前後)。ドメインなしの Quick Tunnel は起動ごとに URL が変わり、Slack・GitHub・コールバック先の再設定が必要になる。ドメインを取得したら、トンネルと DNS も Terraform(Cloudflare プロバイダー)で管理する
 - **AgentCore の東京リージョン提供状況**: フェーズ2着手時に Runtime・Gateway が東京で使えるか確認。可能なら Lambda と同じリージョンに揃える
 - **実装役のモデル**: 国内処理(`jp.`)の方針を実装役にも適用するか。東京で使える `jp.` の Sonnet は 4.6 まで(2026-10 時点)
-- **最初の対象 Slack チャンネルとリポジトリ**: `#casino-issue`(チャンネル ID `C0CA0J6C9NF`)→ `Nahaq789/casino-simulator` に決定(決定済み。対応表を n8n に書いたらこの項目は削除する)
 - **1 つの依頼から複数の Issue を作る**: 「A と B を直したい」を 2 つの Issue に分けるなど。整理役が複数の Issue 案を返す形に出力を変える必要がある(今は 1 依頼 = 1 Issue 案)
 - **実装役の GitHub トークンの保管先**(Parameter Store か AgentCore Identity か)
