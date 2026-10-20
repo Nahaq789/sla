@@ -1,11 +1,7 @@
 {
-  "updatedAt": "2026-10-20T21:49:59.307Z",
-  "createdAt": "2026-10-18T22:39:14.293Z",
   "id": "YU6WzcXSpfrOvqVJ",
   "name": "slack-issue-agent",
   "description": null,
-  "active": true,
-  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -303,34 +299,6 @@
     "templateCredsSetupCompleted": true
   },
   "nodeGroups": [],
-  "versionId": "1a69cecd-dd3b-4e78-b53a-89560fdce154",
-  "activeVersionId": "1a69cecd-dd3b-4e78-b53a-89560fdce154",
-  "versionCounter": 89,
-  "triggerCount": 1,
   "sourceWorkflowId": null,
-  "tags": [],
-  "shared": [
-    {
-      "updatedAt": "2026-10-18T22:39:14.295Z",
-      "createdAt": "2026-10-18T22:39:14.295Z",
-      "role": "workflow:owner",
-      "workflowId": "YU6WzcXSpfrOvqVJ",
-      "projectId": "SgUho2aVGiH7cd7J",
-      "project": {
-        "updatedAt": "2026-10-18T04:43:28.075Z",
-        "createdAt": "2026-10-18T04:38:24.491Z",
-        "id": "SgUho2aVGiH7cd7J",
-        "name": "naha q <REDACTED>",
-        "type": "personal",
-        "icon": null,
-        "description": null,
-        "customTelemetryTags": [],
-        "creatorId": "4ca30048-1f1f-4832-9d68-87477fb2d7b4"
-      }
-    }
-  ],
-  "versionMetadata": {
-    "name": "v10 reply to message",
-    "description": ""
-  }
+  "tags": []
 }
