@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-19T22:44:35.007Z",
+  "updatedAt": "2026-10-20T21:49:59.307Z",
   "createdAt": "2026-10-18T22:39:14.293Z",
   "id": "YU6WzcXSpfrOvqVJ",
   "name": "slack-issue-agent",
@@ -212,7 +212,9 @@
           "value": "={{ $('Edit Fields').item.json.channel }}",
           "mode": "id"
         },
-        "text": "=Issue 案を作成しました。\n\n*{{ $json.result.issue.title }}*\n\n*背景*\n{{ $json.result.issue.background }}\n\n*タスク*\n{{ $json.result.issue.tasks.map(t => `• ${t}`).join('\\n') }}\n\n*完了条件*\n{{ $json.result.issue.acceptance_criteria.map(c => `• ${c}`).join('\\n') }}\n\n*ラベル*: {{ $json.result.issue.labels.join(', ') || 'なし' }}",
+        "messageType": "block",
+        "blocksUi": "={{ JSON.stringify({ blocks: [\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"Issue 案を作成しました。\\n\\n*\" + $json.result.issue.title + \"*\" } },\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*背景*\\n\" + $json.result.issue.background } },\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*タスク*\\n\" + $json.result.issue.tasks.map(t => \"• \" + t).join(\"\\n\") } },\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*完了条件*\\n\" + $json.result.issue.acceptance_criteria.map(c => \"• \" + c).join(\"\\n\") } },\n  { type: \"context\", elements: [ { type: \"mrkdwn\", text: \"ラベル: \" + ($json.result.issue.labels.join(\", \") || \"なし\") + \"　／　直したいところは、このスレッドで @issue-agent に送ってください\" } ] },\n  { type: \"actions\", elements: [ { type: \"button\", text: { type: \"plain_text\", text: \"作成\" }, style: \"primary\", action_id: \"create_issue\", value: JSON.stringify({ thread_ts: $json.result.thread_ts, draft_id: $json.result.draft_id }) } ] }\n] }) }}",
+        "text": "=Issue 案: {{ $json.result.issue.title }}",
         "otherOptions": {
           "includeLinkToWorkflow": false,
           "thread_ts": {
@@ -301,9 +303,9 @@
     "templateCredsSetupCompleted": true
   },
   "nodeGroups": [],
-  "versionId": "1e701a06-45fe-41a8-bb7a-751f589134bf",
-  "activeVersionId": "1e701a06-45fe-41a8-bb7a-751f589134bf",
-  "versionCounter": 82,
+  "versionId": "1a69cecd-dd3b-4e78-b53a-89560fdce154",
+  "activeVersionId": "1a69cecd-dd3b-4e78-b53a-89560fdce154",
+  "versionCounter": 89,
   "triggerCount": 1,
   "sourceWorkflowId": null,
   "tags": [],
@@ -328,7 +330,7 @@
     }
   ],
   "versionMetadata": {
-    "name": "v8 Issue案",
+    "name": "v10 reply to message",
     "description": ""
   }
 }

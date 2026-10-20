@@ -24,7 +24,11 @@ if [[ -z "${url}" ]]; then
 fi
 
 previous="$(sed -n 's/^WEBHOOK_URL=//p' "${env_file}" 2>/dev/null || true)"
-echo "WEBHOOK_URL=${url}/" > "${env_file}"
+# WEBHOOK_URL の行だけを書き換え、他の行 (SLACK_SIGNING_SECRET など) は残す
+touch "${env_file}"
+chmod 600 "${env_file}"
+{ grep -v '^WEBHOOK_URL=' "${env_file}" || true; echo "WEBHOOK_URL=${url}/"; } > "${env_file}.tmp"
+mv "${env_file}.tmp" "${env_file}"
 
 # WEBHOOK_URL が変わっていれば compose が n8n を作り直す
 "${compose[@]}" up -d n8n
