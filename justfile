@@ -47,6 +47,22 @@ build:
 test:
     uv run --project agents/organizer pytest agents/organizer
 
+# ===== 実装役 (AgentCore Runtime) =====
+
+implementer_image := "slack-issue-agent-implementer:local"
+
+# 実装役の単体テスト
+implementer-test:
+    uv run --project agents/implementer pytest agents/implementer
+
+# 実装役のイメージを ARM64 でビルド（x86 の PC では QEMU でエミュレートする）
+implementer-build:
+    docker buildx build --platform linux/arm64 --load -t {{implementer_image}} agents/implementer
+
+# 実装役を手元で起動（PC から http://localhost:8080、n8n から http://implementer:8080。n8n を先に起動しておく）
+implementer-run: implementer-build
+    docker run --rm --name implementer --network slack-issue-agent_default --platform linux/arm64 -p 8080:8080 {{implementer_image}}
+
 # ===== n8n =====
 
 # n8n だけをローカルで起動（トンネルなし。初回のオーナーアカウント作成に使う）

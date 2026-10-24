@@ -30,9 +30,9 @@ n8n → Slack スレッドに Issue 案を投稿 [作成]
   ↓ [作成] 押下
 n8n → GitHub に Issue 作成 → Slack に Issue リンクを通知 [PRも作る][自分でやる]
   ↓ [PRも作る] 押下(フェーズ2)
-n8n → AgentCore Runtime(実装役)を起動
-  ↓ clone → 修正 → テスト → Draft PR 作成
-  ↓ 完了時に n8n の Webhook へコールバック
+n8n → AgentCore Runtime(実装役)を起動(HTTP Request で InvokeAgentRuntime、受け付けたらすぐ返る)
+  ↓ clone → 修正 → テスト → Draft PR 作成(裏で実行)
+  ↓ 完了時に n8n の Wait ノードの再開用 URL へコールバック
 n8n → Slack スレッドに PR リンク・変更概要を通知
   ↓ GitHub Webhook(PR マージ / CI 結果)
 n8n → Langfuse にスコア送信
@@ -100,12 +100,11 @@ n8n → Langfuse にスコア送信
 ## 6. マルチリポジトリ対応
 
 - n8n がチャンネル ID → リポジトリの対応表を持つ。キーはチャンネル名ではなく**チャンネル ID**
-  ```json
-  {
-    "C0123ABCD": { "repo": "Nahaq789/pob" }
-  }
+  ```js
+  ({ "C0CA0J6C9NF": "Nahaq789/casino-simulator" })   // #casino-issue
   ```
-- 対応表は当面 n8n のワークフロー内(Set / Code ノード)に直接書く。数が増えたら外部ストアへ移す
+- 対応表は当面 n8n のワークフロー `slack-issue-agent` の Edit Fields ノード(`repo` の式)に直接書く。数が増えたら外部ストアへ移す
+- Slack Trigger はワークスペース全体の `app_mention` を受ける(bot が招待されたチャンネルのメンションだけが届く)。対応表にないチャンネルかどうかは n8n が判定する
 - 対応表にないチャンネルでメンションされたら「このチャンネルはリポジトリに紐づいていません」と返して終了
 - 整理役はリポジトリを判定しない。渡された `repo` をそのまま Issue 案に載せる
 - フェーズ2では、各リポジトリに `AGENTS.md`(言語、テストコマンド、規約)を置き、実装役が最初に読む
@@ -117,7 +116,7 @@ n8n → Langfuse にスコア送信
 {
   "message": "ログイン画面のエラーメッセージを日本語にして",
   "thread_ts": "1727770000.123456",
-  "repo": "Nahaq789/pob",
+  "repo": "Nahaq789/casino-simulator",
   "message_ts": "1727770000.123456"
 }
 ```
@@ -140,7 +139,7 @@ n8n → Langfuse にスコア送信
 ```json
 {
   "status": "ready",
-  "repo": "Nahaq789/pob",
+  "repo": "Nahaq789/casino-simulator",
   "thread_ts": "1727770000.123456",
   "draft_id": "1727770100.654321",
   "issue": {
@@ -208,13 +207,15 @@ n8n → Langfuse にスコア送信
 | GitHub トークン(Issue 作成用) | n8n | n8n の認証情報ストア |
 | n8n 用 AWS アクセスキー | n8n | n8n の認証情報ストア |
 | Langfuse 公開鍵・秘密鍵 | 整理役・実装役 | SSM Parameter Store(SecureString) |
-| GitHub トークン(PR 作成用) | 実装役 | Parameter Store または AgentCore Identity(フェーズ2で決定) |
+| GitHub トークン(PR 作成用) | 実装役(Gateway 経由の GitHub API、コンテナからの git push) | AgentCore Identity の API キープロバイダー |
 
 ルール:
 - **秘密情報の値を Terraform のコードや state に入れない**
 - Parameter Store のパラメータは Terraform で「入れ物」だけ作り、値はダミー + `lifecycle { ignore_changes = [value] }`。本物の値は `aws ssm put-parameter --overwrite` で投入する
+- AgentCore Identity の API キープロバイダーも同じく、Terraform でダミーの値で作り(値は `ignore_changes`)、本物の値は `aws bedrock-agentcore-control update-api-key-credential-provider` で投入する。書き込み専用の `api_key_wo` は、apply が CI で動くためトークンを GitHub Actions の Secret にも置くことになるので使わない
+- GitHub の OAuth2 プロバイダー(人が許可を押す方式)は、実装役が無人で動くため使わない
 - n8n 用 IAM ユーザーのアクセスキーは Terraform で作らず、CLI で発行する
-- GitHub トークンは fine-grained PAT で、対象リポジトリだけに権限を絞る
+- GitHub トークンは fine-grained PAT で、対象リポジトリだけに権限を絞る。Issue 作成用(n8n、Issues)と PR 作成用(実装役、Contents と Pull requests)は別のトークンにする
 
 ## 10. インフラ(Terraform)
 
@@ -266,8 +267,9 @@ n8n → Langfuse にスコア送信
 
 ### フェーズ2で追加するリソース
 - ECR(`force_delete = true`、古いイメージを数世代で削除するライフサイクルポリシー)
-- AgentCore Runtime、Gateway、Identity
+- AgentCore Runtime、Gateway、Identity(Lambda と同じ東京リージョンに置く。Runtime・Gateway・Identity とも東京で提供されていることを 2026-10 に確認済み)
 - DynamoDB(オンデマンド、使用量カウンター。会話履歴とは別テーブル)
+- 実装役のモデルは整理役と同じ `jp.anthropic.claude-sonnet-4-6`(国内処理の方針を実装役にも適用)。整理役とは別の変数で受け取り、質が足りなければ `jp.` の Opus や `global.` の新しい Sonnet に切り替える(2026-10 時点で、東京の `jp.` の Sonnet は 4.6 まで、Opus は 5.5 まで)
 
 イメージのビルドと push は Terraform の外(Makefile または GitHub Actions)で行い、Terraform はイメージタグを変数で受け取るだけにする。
 初回のみ ECR リポジトリを先に作ってから push する必要がある。
@@ -303,7 +305,8 @@ n8n → Langfuse にスコア送信
   - 結果は `submit_result` ツールの呼び出しを強制(`toolChoice`)して JSON で受け取り、`core.py` で検証する
   - システムプロンプトとツール定義はプロンプトキャッシュの対象にする(リポジトリ名など呼び出しごとに変わるものはユーザー発言に入れ、システムプロンプトは固定に保つ)
 - Python のパッケージ管理は uv。テストは `just test`
-- 実装役はエージェントフレームワーク(Strands Agents など)の利用を検討する
+- 実装役はエージェントフレームワークに Strands Agents を使う(Bedrock・Gateway(MCP)・OpenTelemetry(Langfuse)と標準でつながり、AgentCore の公式サンプルも多いため)。トークン数・ターン数の上限は標準にないので、フックで毎ターン数えて打ち切る。修正の質が足りなければ Claude Agent SDK を乗り換え先の候補にする
+- 実装役のコンテナは ARM64 の Docker イメージ(ポート 8080、`/invocations` と `/ping`。`bedrock-agentcore` SDK の `BedrockAgentCoreApp` が用意する)。ECS などは使わず、AgentCore Runtime が microVM で動かす
 
 ## 12. n8n
 
@@ -312,7 +315,24 @@ n8n → Langfuse にスコア送信
 - `WEBHOOK_URL` に Cloudflare Tunnel の公開 URL を設定
 - PC が停止している間は動かない(お試しのため許容)
 - Slack Trigger は Webhook 方式を使う(Socket Mode は使わない)
-- Slack は3秒以内に応答しないとイベントを再送するため、重い処理は非同期にする
+- Slack は3秒以内に応答しないとイベントを再送するため、重い処理は非同期にする(Slack Trigger と Webhook ノードは受信直後に応答する)
+- ワークフローは 2 本。JSON を `n8n/workflows/` に置いて Git 管理する(`just n8n-export` で書き出す)
+
+  | ワークフロー | きっかけ | 処理 |
+  |---|---|---|
+  | `slack-issue-agent` | Slack Trigger(`app_mention`) | 対応表でリポジトリを決める → 整理役 → 質問 / Issue 案([作成] ボタン付き)/ エラーをスレッドに返信 |
+  | `slack-issue-create` | Webhook `/webhook/slack-interactivity`(Slack の Interactivity) | 署名検証 → 整理役 `get_issue` → GitHub に Issue 作成(ラベル付き)→ メッセージを書き換えてボタンを消す。失敗したらスレッドに返信 |
+
+- Slack Trigger を使うワークフローは、Publish 中は編集画面でテスト実行できない。変更は Save → Publish → Slack でメンション → Executions で確認する
+- Webhook ノードは Slack の署名を検証しないため、Code ノードで検証する(Signing Secret は `n8n/.env` の `SLACK_SIGNING_SECRET`)。Code ノードで `$env` と `crypto` を使うため、`N8N_BLOCK_ENV_ACCESS_IN_NODE=false`、`NODE_FUNCTION_ALLOW_BUILTIN=crypto` を設定している
+- [作成] の連打で Issue が重複する可能性は残る(1 回目の作成後にボタンを消すまでの数秒間)。お試しのため許容する
+- GitHub トークンは Fine-grained token(対象リポジトリの Issues: Read and write だけ)。期限付きなので、切れたら作り直して n8n の認証情報を更新する
+- 実装役の起動(フェーズ2):
+  - HTTP Request ノードで `InvokeAgentRuntime`(`https://bedrock-agentcore.ap-northeast-1.amazonaws.com/runtimes/<URL エンコードした Runtime の ARN>/invocations`)を呼ぶ。認証は AWS の認証情報(SigV4)。Lambda を挟まない。n8n の署名が `bedrock-agentcore` で通ることは確認済み(2026-10)
+  - 実装役は SDK の `add_async_task` / `complete_async_task` を使い、受け付けたらすぐ応答して裏で作業を続ける(作業中は 15 分のアイドルタイムアウトで止まらない)
+  - 完了の知らせは Wait ノード(Webhook が呼ばれるまで待つ)で受ける。起動時のペイロードに `$execution.resumeUrl` を入れ、実装役は終わったらそこに POST する。実行ごとに URL を渡すので、Quick Tunnel の URL が変わっても実装役側の設定は要らない
+  - PC が止まっている間に実装役が終わった場合、知らせは失われる(Draft PR は GitHub に残る)。お試しのため許容する
+  - n8n 用 IAM ユーザーには、実装役の Runtime に対する `bedrock-agentcore:InvokeAgentRuntime` だけを許可する
 
 ## 13. 削除手順(プロジェクト廃止時)
 
@@ -327,8 +347,4 @@ n8n → Langfuse にスコア送信
 ## 14. 未決事項
 
 - **Cloudflare Tunnel の URL 固定**: 当面は Quick Tunnel を使う(`just n8n-up` が URL を読み取って `WEBHOOK_URL` に設定する。URL が変わったら Slack App の Request URL を手で更新する)。固定 URL には Cloudflare 管理の独自ドメインが必要(年1,500円前後)。ドメインなしの Quick Tunnel は起動ごとに URL が変わり、Slack・GitHub・コールバック先の再設定が必要になる。ドメインを取得したら、トンネルと DNS も Terraform(Cloudflare プロバイダー)で管理する
-- **AgentCore の東京リージョン提供状況**: フェーズ2着手時に Runtime・Gateway が東京で使えるか確認。可能なら Lambda と同じリージョンに揃える
-- **実装役のモデル**: 国内処理(`jp.`)の方針を実装役にも適用するか。東京で使える `jp.` の Sonnet は 4.6 まで(2026-10 時点)
-- **最初の対象 Slack チャンネルとリポジトリ**: `#casino-issue`(チャンネル ID `C0CA0J6C9NF`)→ `Nahaq789/casino-simulator` に決定(決定済み。対応表を n8n に書いたらこの項目は削除する)
 - **1 つの依頼から複数の Issue を作る**: 「A と B を直したい」を 2 つの Issue に分けるなど。整理役が複数の Issue 案を返す形に出力を変える必要がある(今は 1 依頼 = 1 Issue 案)
-- **実装役の GitHub トークンの保管先**(Parameter Store か AgentCore Identity か)
