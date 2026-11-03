@@ -63,8 +63,9 @@ Git に入っていないもの（tfvars、n8n のデータ）は作り直し、
 | AWS のログイン（自分の IAM ユーザー） | AWS CLI（`just invoke` など） | `aws login` でログインし直す |
 | GitHub への push の認証（SSH キーなど） | git | 今の PC と同じ方法で用意する |
 | Slack の Bot User OAuth Token（`xoxb-`） | n8n の Slack API 認証情報 | KeePass（Slack App の OAuth & Permissions でも確認できる） |
-| Slack の Signing Secret | n8n の Slack API 認証情報 | KeePass（Slack App の Basic Information でも確認できる） |
+| Slack の Signing Secret | n8n の Slack API 認証情報と `n8n/.env`（[作成] ボタンの署名検証） | KeePass（Slack App の Basic Information でも確認できる） |
 | n8n 用 IAM ユーザーのアクセスキー | n8n の AWS 認証情報 | KeePass（発行し直す必要はない） |
+| GitHub の Fine-grained token（`github_pat_`） | n8n の GitHub API 認証情報（Issue 作成） | KeePass。期限が切れたら作り直す（対象リポジトリの Issues: Read and write だけ） |
 
 Langfuse の鍵（SSM に保存済み）、CI の Variables / Secrets（GitHub に登録済み）、Bedrock のユースケース申請（AWS アカウント単位）は、PC を変えても不要です。
 
@@ -99,7 +100,12 @@ apply は CI（main へのマージ）で行うため、ローカルでは plan 
 
 n8n のデータ（アカウント、認証情報、実行履歴）は PC の Docker ボリュームにしか入っていないため、新しい PC では作り直します。
 
+先に `n8n/.env`（Git 管理外）を作り、Slack の Signing Secret を書きます。[作成] ボタンのリクエストの署名検証（Code ノード）で使います。
+
 ```bash
+echo 'SLACK_SIGNING_SECRET=' > n8n/.env && chmod 600 n8n/.env
+# エディタで n8n/.env を開き、= の後ろに Signing Secret を書く（シェルの履歴に残さないため）
+
 just n8n-local    # トンネルなしで起動
 ```
 
@@ -108,17 +114,25 @@ http://localhost:5678 を開き、オーナーアカウントを作成します�
 
 ### 4. 認証情報を登録する
 
-n8n の **Create Credential** から、次の 2 つを登録します。名前はワークフローの JSON に合わせておくと、取り込み後に選び直す手間が減ります。
+n8n の **Create Credential** から、次の 3 つを登録します。名前はワークフローの JSON に合わせておくと、取り込み後に選び直す手間が減ります。
 
 | 種類 | 名前 | 入力する値 |
 | --- | --- | --- |
 | Slack API | `Slack issue-agent` | Access Token: Bot User OAuth Token / Signature Secret: Signing Secret |
 | AWS | `AWS slack-issue-agent-n8n` | Region: `ap-northeast-1` / Access Key ID・Secret Access Key: n8n 用 IAM ユーザーのアクセスキー |
+| GitHub API | `GitHub account` | User: `Nahaq789` / Access Token: Fine-grained token |
 
 ### 5. ワークフローを取り込む
 
-1. n8n で新しいワークフローを開き、右上の **…** → **Import from File** で `n8n/workflows/slack-issue-agent.json` を選ぶ
-2. Slack Trigger と AWS Lambda のノードを開き、認証情報が手順 4 で登録したものになっているか確認する（なっていなければ選び直す）
+`n8n/workflows/` の 2 つのワークフローを取り込みます。
+
+| ファイル | 内容 |
+| --- | --- |
+| `slack-issue-agent.json` | メンションを受けて整理役を呼び、質問または Issue 案（[作成] ボタン付き）をスレッドに投稿する |
+| `slack-issue-create.json` | [作成] ボタンを受け、署名を検証し、Issue 案を取り出して GitHub に Issue を作り、メッセージを書き換える |
+
+1. n8n で新しいワークフローを開き、右上の **…** → **Import from File** でファイルを選ぶ（2 つとも行う）
+2. Slack・AWS Lambda・GitHub のノードを開き、認証情報が手順 4 で登録したものになっているか確認する（なっていなければ選び直す）
 3. **Save** する（まだ Publish しない）
 
 ### 6. トンネルを張り、Slack に URL を登録する
@@ -129,15 +143,20 @@ n8n の **Create Credential** から、次の 2 つを登録します。名前�
 just n8n-up    # Quick Tunnel を起動し、公開 URL を WEBHOOK_URL に設定して n8n を起動し直す
 ```
 
-1. n8n でワークフローを **Publish** する
-2. Slack Trigger ノードの **Production URL**（`https://<ランダム>.trycloudflare.com/webhook/...`）をコピーする
-3. https://api.slack.com/apps → Issue Agent → **Event Subscriptions** の **Request URL** に貼り付け、Verified になったら **Save Changes**
+1. n8n で 2 つのワークフローを **Publish** する
+2. https://api.slack.com/apps → Issue Agent で、2 か所に URL を登録する
 
-Quick Tunnel の URL はトンネルを起動し直すたびに変わります。`just n8n-up` が「公開 URL が変わりました」と表示したら、手順 2〜3 をやり直してください。
+   | 設定画面 | Request URL | 登録のしかた |
+   | --- | --- | --- |
+   | **Event Subscriptions** | `slack-issue-agent` の Slack Trigger ノードの **Production URL**（`https://<ランダム>.trycloudflare.com/webhook/<ID>/webhook`） | 貼り付けて Verified になったら **Save Changes** |
+   | **Interactivity & Shortcuts** | `slack-issue-create` の Webhook ノードの **Production URL**（`https://<ランダム>.trycloudflare.com/webhook/slack-interactivity`） | Interactivity をオンにして貼り付け、**Save Changes** |
+
+Quick Tunnel の URL はトンネルを起動し直すたびに変わります。`just n8n-up` が「公開 URL が変わりました」と表示したら、手順 2 の 2 か所をやり直してください（変わるのはドメインの部分だけ）。
 
 ### 7. 動作確認
 
-Slack の `#casino-issue` で `@issue-agent <依頼>` と投稿し、n8n の **Executions** に実行が記録されることを確認します。
+Slack の `#casino-issue` で `@issue-agent <依頼>` と投稿し、スレッドに質問または Issue 案が返ってくることを確認します。
+Issue 案の [作成] を押すと、`Nahaq789/casino-simulator` に本物の Issue が作られます（テストで作った Issue は Close または削除する）。
 
 ### ワークフローを変更したら
 

@@ -1,0 +1,18 @@
+[project]
+name = "implementer"
+version = "0.1.0"
+description = "実装役 (AgentCore Runtime): GitHub Issue からコードを直して Draft PR を作る"
+# コンテナのベースイメージ (python:3.13) に合わせる
+requires-python = "==3.13.*"
+dependencies = [
+    "bedrock-agentcore>=1.25.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

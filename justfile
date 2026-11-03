@@ -47,6 +47,39 @@ build:
 test:
     uv run --project agents/organizer pytest agents/organizer
 
+# ===== 実装役 (AgentCore Runtime) =====
+
+implementer_image := "slack-issue-agent-implementer:local"
+
+# 実装役の単体テスト
+implementer-test:
+    uv run --project agents/implementer pytest agents/implementer
+
+# 実装役のイメージを ARM64 でビルド（x86 の PC では QEMU でエミュレートする）
+implementer-build:
+    docker buildx build --platform linux/arm64 --load -t {{implementer_image}} agents/implementer
+
+# 実装役を手元で起動（PC から http://localhost:8080、n8n から http://implementer:8080。n8n を先に起動しておく）
+implementer-run: implementer-build
+    docker run --rm --name implementer --network slack-issue-agent_default --platform linux/arm64 -p 8080:8080 {{implementer_image}}
+
+# 実装役のイメージを ARM64 でビルドして ECR に push する（タグはコミットの SHA。未コミットの変更があれば止める）
+implementer-push:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git status --porcelain -- agents/implementer)" ]; then
+        echo "agents/implementer に未コミットの変更があります。コミットしてから push してください" >&2
+        exit 1
+    fi
+    tag="$(git rev-parse --short=12 HEAD)"
+    region="ap-northeast-1"
+    registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${region}.amazonaws.com"
+    aws ecr get-login-password --region "${region}" | docker login --username AWS --password-stdin "${registry}"
+    # マルチプラットフォーム形式にならないよう、provenance は付けない (単一の ARM64 イメージにする)
+    docker buildx build --platform linux/arm64 --provenance=false --push \
+        -t "${registry}/slack-issue-agent-implementer:${tag}" agents/implementer
+    echo "push しました。タグ: ${tag}"
+
 # ===== n8n =====
 
 # n8n だけをローカルで起動（トンネルなし。初回のオーナーアカウント作成に使う）

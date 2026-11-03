@@ -27,3 +27,8 @@ output "conversations_table_name" {
   description = "整理役の会話履歴テーブル名"
   value       = aws_dynamodb_table.conversations.name
 }
+
+output "implementer_ecr_repository_url" {
+  description = "実装役のイメージを置く ECR リポジトリの URL"
+  value       = aws_ecr_repository.implementer.repository_url
+}

@@ -1,0 +1,280 @@
+{
+  "id": "8LszF3MEVS9nz0pa",
+  "name": "slack-issue-create",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack-interactivity",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "db7b3699-3a51-4b66-949c-44e55e61933b",
+      "name": "Webhook",
+      "webhookId": "778c93d7-de4b-4644-8ebf-5e8dd32f62fd"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Slack の署名を確かめる\nconst crypto = require('crypto');\n\nconst item = $input.first();\nconst headers = item.json.headers;\nconst timestamp = headers['x-slack-request-timestamp'];\nconst signature = headers['x-slack-signature'] ?? '';\n\n// 5 分以上ずれたリクエストは拒否する (昔のリクエストをコピーして送り直す攻撃への対策)\nif (!timestamp || Math.abs(Date.now() / 1000 - Number(timestamp)) > 60 * 5) {\n  throw new Error('Slack のリクエストの時刻が不正です');\n}\n\n// 署名は、Slack が送ってきたままの本文で計算する\nconst rawBody = (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8');\nconst expected = 'v0=' + crypto\n  .createHmac('sha256', $env.SLACK_SIGNING_SECRET)\n  .update(`v0:${timestamp}:${rawBody}`)\n  .digest('hex');\n\nif (signature.length !== expected.length ||\n    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {\n  throw new Error('Slack の署名が一致しません');\n}\n\n// ボタンの値と、後で使う情報を取り出す\nconst payload = JSON.parse(item.json.body.payload);\nconst { thread_ts, draft_id } = JSON.parse(payload.actions[0].value);\n\nreturn [{\n  json: {\n    thread_ts,\n    draft_id,\n    channel: payload.channel.id,\n    message_ts: payload.message.ts,     // ボタンが付いたメッセージ (後でボタンを消すのに使う)\n    user: payload.user.id,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "e5c5f0bb-ca11-42cb-94c1-e70332c914d6",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "function": "=slack-issue-agent-organizer",
+        "payload": "={{ JSON.stringify({ action: \"get_issue\", thread_ts: $json.thread_ts, draft_id: $json.draft_id }) }}"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "33c3d1c6-7c20-4476-85ef-0e6a96c9afdb",
+      "name": "AWS Lambda",
+      "credentials": {
+        "aws": {
+          "id": "cEaSdIt6mNivq7kW",
+          "name": "AWS slack-issue-agent-n8n"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "owner": {
+          "__rl": true,
+          "value": "={{ $json.result.repo.split('/')[0] }}",
+          "mode": "name"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.result.repo.split('/')[1] }}"
+        },
+        "title": "={{ $json.result.issue.title }}",
+        "body": "=## 背景\n{{ $json.result.issue.background }}\n\n## タスク\n{{ $json.result.issue.tasks.map(t => `- [ ] ${t}`).join('\\n') }}\n\n## 完了条件\n{{ $json.result.issue.acceptance_criteria.map(c => `- [ ] ${c}`).join('\\n') }}\n\n---\nSlack から slack-issue-agent で作成（thread_ts: {{ $json.result.thread_ts }}）",
+        "labels": "={{ $json.result.issue.labels.map(label => ({ label })) }}",
+        "assignees": []
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        848,
+        0
+      ],
+      "id": "dc23f7b2-1158-4b4d-ab56-7cb2d5197924",
+      "name": "Create an issue",
+      "webhookId": "4ad1278a-cae7-413a-92c5-5833c04d0100",
+      "credentials": {
+        "githubApi": {
+          "id": "qad2afJxHdz97mmB",
+          "name": "GitHub account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Code in JavaScript').item.json.channel }}",
+          "mode": "id"
+        },
+        "ts": "={{ $('Code in JavaScript').item.json.message_ts }}",
+        "messageType": "block",
+        "blocksUi": "={{ JSON.stringify({ blocks: [\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*\" + $('AWS Lambda').item.json.result.issue.title + \"*\" } },\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*背景*\\n\" + $('AWS Lambda').item.json.result.issue.background } },\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*タスク*\\n\" + $('AWS Lambda').item.json.result.issue.tasks.map(t => \"• \" + t).join(\"\\n\") } },\n  { type: \"section\", text: { type: \"mrkdwn\", text: \"*完了条件*\\n\" + $('AWS Lambda').item.json.result.issue.acceptance_criteria.map(c => \"• \" + c).join(\"\\n\") } },\n  { type: \"context\", elements: [ { type: \"mrkdwn\", text: \"✅ <@\" + $('Code in JavaScript').item.json.user + \"> が Issue を作成しました: <\" + $json.html_url + \"|#\" + $json.number + \">\" } ] }\n] }) }}",
+        "text": "= Issue を作成しました: {{ $json.html_url }}",
+        "updateFields": {},
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1072,
+        -96
+      ],
+      "id": "0c4bd48f-f225-4bc2-9349-28db87f2f963",
+      "name": "Update a message",
+      "webhookId": "fa36d07f-56e4-4491-bf7f-f4793d023f23",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7e5c3a9a-c73b-4ec9-afaf-8f6ad347de4f",
+              "leftValue": "={{ $json.result.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "ready"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        0
+      ],
+      "id": "c80749d4-b222-441a-9a57-b8a7aeae28c8",
+      "name": "Issue 案あり?"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Code in JavaScript').item.json.channel }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.result?.error?.code === 'draft_not_found' ? 'この Issue 案は見つかりませんでした (30 日以上前の案や、1 スレッド 10 件を超えた古い案は削除されます)。もう一度依頼してください。' : 'Issue の作成に失敗しました。n8n の Executions でエラーの内容を確認してください (GitHub のトークンの期限切れなどが考えられます)。' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Code in JavaScript').item.json.thread_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1072,
+        160
+      ],
+      "id": "ac0a70b3-9cfc-40a2-893d-bfb68bea342f",
+      "name": "Slack 作成失敗",
+      "webhookId": "154cb8d4-8426-4d2e-86c4-74b689c80b41",
+      "credentials": {
+        "slackApi": {
+          "id": "4WuRAfJvn5G4x9iT",
+          "name": "Slack issue-agent"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Lambda": {
+      "main": [
+        [
+          {
+            "node": "Issue 案あり?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack 作成失敗",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an issue": {
+      "main": [
+        [
+          {
+            "node": "Update a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack 作成失敗",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Issue 案あり?": {
+      "main": [
+        [
+          {
+            "node": "Create an issue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack 作成失敗",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "sourceWorkflowId": null,
+  "tags": []
+}

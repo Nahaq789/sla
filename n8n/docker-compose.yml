@@ -15,6 +15,11 @@ services:
       - GENERIC_TIMEZONE=Asia/Tokyo
       - TZ=Asia/Tokyo
       - N8N_DIAGNOSTICS_ENABLED=false
+      # Slack の [作成] ボタンのリクエストの署名検証に使う (値は n8n/.env に書く。Git 管理外)
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
+      # 署名検証の Code ノードで $env と crypto を使う (n8n 2.x ではどちらも既定で禁止)
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
     volumes:
       - n8n_data:/home/node/.n8n
 
