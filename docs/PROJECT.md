@@ -207,7 +207,7 @@ n8n → Langfuse にスコア送信
 | GitHub トークン(Issue 作成用) | n8n | n8n の認証情報ストア |
 | n8n 用 AWS アクセスキー | n8n | n8n の認証情報ストア |
 | Langfuse 公開鍵・秘密鍵 | 整理役・実装役 | SSM Parameter Store(SecureString) |
-| GitHub トークン(PR 作成用) | 実装役(Gateway 経由の GitHub API、コンテナからの git push) | AgentCore Identity の API キープロバイダー |
+| GitHub トークン(PR 作成用) | Gateway(GitHub API を呼ぶときに付ける。実装役のコンテナには渡さない) | AgentCore Identity の API キープロバイダー |
 
 ルール:
 - **秘密情報の値を Terraform のコードや state に入れない**
@@ -215,7 +215,11 @@ n8n → Langfuse にスコア送信
 - AgentCore Identity の API キープロバイダーも同じく、Terraform でダミーの値で作り(値は `ignore_changes`)、本物の値は `aws bedrock-agentcore-control update-api-key-credential-provider` で投入する。書き込み専用の `api_key_wo` は、apply が CI で動くためトークンを GitHub Actions の Secret にも置くことになるので使わない
 - GitHub の OAuth2 プロバイダー(人が許可を押す方式)は、実装役が無人で動くため使わない
 - n8n 用 IAM ユーザーのアクセスキーは Terraform で作らず、CLI で発行する
-- GitHub トークンは fine-grained PAT で、対象リポジトリだけに権限を絞る。Issue 作成用(n8n、Issues)と PR 作成用(実装役、Contents と Pull requests)は別のトークンにする
+- GitHub トークンは fine-grained PAT で、対象リポジトリだけに権限を絞る。Issue 作成用(n8n、Issues)と PR 作成用(実装役、Contents・Pull requests の Read and write、Issues の Read-only)は別のトークンにする
+- 実装役のコンテナに GitHub トークンを入れない。AI が実行するコマンドはコンテナの AWS 認証情報を使えるので、実行ロールがトークンを取得できると、環境変数などから隠しても AI が入手できてしまう。実行ロールには Gateway を呼ぶ権限だけを与え、`GetResourceApiKey` は与えない
+  - clone はトークンなしの `git` で行う(公開リポジトリのみ。非公開リポジトリを対象にするときは Gateway 経由のファイル取得を別途考える)
+  - コミットと PR は Gateway のツールで作る: `get_issue`、`get_branch`、`create_blob`、`create_tree`、`create_commit`、`create_branch`、`create_draft_pr`
+  - 既存のブランチを更新するツールは置かない(`create_branch` は既存のブランチに使えないので、ツールの範囲では `main` を書き換えられない)。トークン自体には Contents の書き込み権限があるので、対象リポジトリの `main` にはブランチ保護を設定する
 
 ## 10. インフラ(Terraform)
 

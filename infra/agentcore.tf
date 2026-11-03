@@ -87,6 +87,13 @@ resource "aws_iam_role_policy" "implementer_exec" {
           StringEquals = { "cloudwatch:namespace" = "bedrock-agentcore" }
         }
       },
+      {
+        # GitHub には Gateway 経由でだけ触れる。トークンを読む権限 (GetResourceApiKey など) は付けない
+        Sid      = "InvokeGitHubGateway"
+        Effect   = "Allow"
+        Action   = "bedrock-agentcore:InvokeGateway"
+        Resource = aws_bedrockagentcore_gateway.github.gateway_arn
+      },
     ]
   })
 }

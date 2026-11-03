@@ -37,3 +37,8 @@ output "implementer_runtime_arn" {
   description = "実装役の AgentCore Runtime の ARN（n8n の HTTP Request で URL エンコードして使う）"
   value       = aws_bedrockagentcore_agent_runtime.implementer.agent_runtime_arn
 }
+
+output "github_gateway_url" {
+  description = "実装役が GitHub API を呼ぶ AgentCore Gateway の URL"
+  value       = aws_bedrockagentcore_gateway.github.gateway_url
+}

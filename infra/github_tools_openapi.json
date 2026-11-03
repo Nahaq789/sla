@@ -1,0 +1,302 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "slack-issue-agent GitHub tools",
+    "description": "実装役に許可する GitHub API だけを並べた定義。ここにない操作 (マージ、ブランチの更新や削除など) は Gateway から呼べない",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.github.com"
+    }
+  ],
+  "paths": {
+    "/repos/{owner}/{repo}/issues/{issue_number}": {
+      "get": {
+        "operationId": "get_issue",
+        "summary": "Issue を 1 件取得する",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "issue_number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Issue" }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/branches/{branch}": {
+      "get": {
+        "operationId": "get_branch",
+        "summary": "ブランチの先頭のコミットを取得する",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "branch",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "ブランチ" }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/git/blobs": {
+      "post": {
+        "operationId": "create_blob",
+        "summary": "ファイルの中身を blob として登録する",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["content", "encoding"],
+                "properties": {
+                  "content": { "type": "string" },
+                  "encoding": {
+                    "type": "string",
+                    "enum": ["utf-8", "base64"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "blob" }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/git/trees": {
+      "post": {
+        "operationId": "create_tree",
+        "summary": "元の tree に変更したファイルを重ねた tree を作る",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["base_tree", "tree"],
+                "properties": {
+                  "base_tree": { "type": "string" },
+                  "tree": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["path", "mode", "type", "sha"],
+                      "properties": {
+                        "path": { "type": "string" },
+                        "mode": {
+                          "type": "string",
+                          "enum": ["100644", "100755"]
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": ["blob"]
+                        },
+                        "sha": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "blob の SHA。null ならファイルを削除する"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "tree" }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/git/commits": {
+      "post": {
+        "operationId": "create_commit",
+        "summary": "tree からコミットを作る (この時点ではどのブランチにも属さない)",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message", "tree", "parents"],
+                "properties": {
+                  "message": { "type": "string" },
+                  "tree": { "type": "string" },
+                  "parents": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "コミット" }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/git/refs": {
+      "post": {
+        "operationId": "create_branch",
+        "summary": "コミットを指す新しいブランチを作る (既にあるブランチは変更できない)",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ref", "sha"],
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^refs/heads/agent/",
+                    "description": "refs/heads/agent/ で始まるブランチ名"
+                  },
+                  "sha": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "ブランチ" }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/pulls": {
+      "post": {
+        "operationId": "create_draft_pr",
+        "summary": "Draft PR を作る",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "head", "base", "body", "draft"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "head": { "type": "string" },
+                  "base": { "type": "string" },
+                  "body": { "type": "string" },
+                  "draft": {
+                    "type": "boolean",
+                    "enum": [true]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "PR" }
+        }
+      }
+    }
+  }
+}

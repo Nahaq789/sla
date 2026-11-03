@@ -85,6 +85,23 @@ implementer-push:
         -t "${registry}/slack-issue-agent-implementer:${tag}" agents/implementer
     echo "push しました。タグ: ${tag}"
 
+# GitHub トークンを AgentCore Identity に登録する（入力は画面に出さず、コマンドの引数や履歴にも残さない）
+github-token:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    read -rsp "GitHub トークンを貼り付けて Enter: " token
+    echo
+    if [ -z "${token}" ]; then
+        echo "トークンが空です" >&2
+        exit 1
+    fi
+    printf '{"name":"slack-issue-agent-github","apiKey":"%s"}' "${token}" \
+        | aws bedrock-agentcore-control update-api-key-credential-provider \
+            --region ap-northeast-1 \
+            --cli-input-json file:///dev/stdin \
+            > /dev/null
+    echo "登録しました"
+
 # ===== n8n =====
 
 # n8n だけをローカルで起動（トンネルなし。初回のオーナーアカウント作成に使う）
