@@ -143,6 +143,15 @@ resource "aws_iam_user_policy" "n8n_invoke" {
           aws_lambda_function.organizer.arn,
           "${aws_lambda_function.organizer.arn}:*",
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = "bedrock-agentcore:InvokeAgentRuntime"
+        # 呼び出しは Runtime とそのエンドポイント (DEFAULT) の両方で認可される
+        Resource = [
+          aws_bedrockagentcore_agent_runtime.implementer.agent_runtime_arn,
+          "${aws_bedrockagentcore_agent_runtime.implementer.agent_runtime_arn}/*",
+        ]
       }
     ]
   })

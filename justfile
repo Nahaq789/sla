@@ -74,6 +74,11 @@ implementer-push:
     tag="$(git rev-parse --short=12 HEAD)"
     region="ap-northeast-1"
     registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${region}.amazonaws.com"
+    # ECR のトークンは長く、Windows の資格情報マネージャー (desktop.exe) に保存できないので、
+    # この push の間だけ一時的な設定フォルダを使う (終わったらログイン情報ごと消す)
+    DOCKER_CONFIG="$(mktemp -d)"
+    export DOCKER_CONFIG
+    trap 'rm -rf "${DOCKER_CONFIG}"' EXIT
     aws ecr get-login-password --region "${region}" | docker login --username AWS --password-stdin "${registry}"
     # マルチプラットフォーム形式にならないよう、provenance は付けない (単一の ARM64 イメージにする)
     docker buildx build --platform linux/arm64 --provenance=false --push \
