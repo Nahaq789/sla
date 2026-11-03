@@ -32,3 +32,8 @@ output "implementer_ecr_repository_url" {
   description = "実装役のイメージを置く ECR リポジトリの URL"
   value       = aws_ecr_repository.implementer.repository_url
 }
+
+output "implementer_runtime_arn" {
+  description = "実装役の AgentCore Runtime の ARN（n8n の HTTP Request で URL エンコードして使う）"
+  value       = aws_bedrockagentcore_agent_runtime.implementer.agent_runtime_arn
+}

@@ -18,3 +18,9 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 10
 }
+
+variable "implementer_image_tag" {
+  description = "実装役のイメージのタグ（just implementer-push が表示するコミットの SHA）。新しいイメージを使うときはここを変える"
+  type        = string
+  default     = "3898b14da74d"
+}
