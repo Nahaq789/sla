@@ -269,6 +269,8 @@ n8n → Langfuse にスコア送信
 - ECR(`force_delete = true`、古いイメージを数世代で削除するライフサイクルポリシー)
 - AgentCore Runtime、Gateway、Identity(Lambda と同じ東京リージョンに置く。Runtime・Gateway・Identity とも東京で提供されていることを 2026-10 に確認済み)
 - DynamoDB(オンデマンド、使用量カウンター。会話履歴とは別テーブル)
+- 命名ルール: Runtime は `slack_issue_agent_` で始める(Runtime の名前にハイフンは使えない)。Gateway と API キープロバイダーは `slack-issue-agent-` で始める。CI の権限はこの名前に絞られているので、外れると作成・変更・削除が拒否される
+- CI の apply 用ロールには `secretsmanager:GetSecretValue` と `PutSecretValue` を持たせない(本物のトークンに CI から触らせないため)。apply で要求されても、権限を広げる前に方針を相談する
 - 実装役のモデルは整理役と同じ `jp.anthropic.claude-sonnet-4-6`(国内処理の方針を実装役にも適用)。整理役とは別の変数で受け取り、質が足りなければ `jp.` の Opus や `global.` の新しい Sonnet に切り替える(2026-10 時点で、東京の `jp.` の Sonnet は 4.6 まで、Opus は 5.5 まで)
 
 イメージのビルドと push は Terraform の外(Makefile または GitHub Actions)で行い、Terraform はイメージタグを変数で受け取るだけにする。
